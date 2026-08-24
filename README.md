@@ -92,7 +92,15 @@ npm run mcp:build
 
 웹 UI에서 프롬프트를 입력하는 방식입니다.
 
+키를 주는 방법은 둘 중 아무거나 됩니다.
+
 ```bash
+# A. 셸 환경변수 — 파일을 만들지 않음
+GEMINI_API_KEY=여기에_키 npm run dev
+```
+
+```bash
+# B. .env 파일 — 매번 입력하지 않음
 cp .env.example .env
 # .env 에 GEMINI_API_KEY 를 채운 뒤 개발 서버 재시작
 ```

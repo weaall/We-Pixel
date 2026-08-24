@@ -214,8 +214,12 @@ export function geminiPlugin(): Plugin {
       // 접두사 ''로 불러야 VITE_ 가 아닌 변수까지 읽는다.
       // define으로 넘기지 않으므로 클라이언트 번들에는 들어가지 않는다.
       const env = loadEnv(mode, process.cwd(), '')
-      apiKey = env.GEMINI_API_KEY ?? ''
-      model = env.GEMINI_MODEL ?? DEFAULT_MODEL
+
+      // 셸에서 넘긴 환경변수를 먼저 본다. .env 파일을 만들지 않고
+      //   GEMINI_API_KEY=... npm run dev
+      // 로 바로 띄울 수 있어야 한다.
+      apiKey = process.env.GEMINI_API_KEY || env.GEMINI_API_KEY || ''
+      model = process.env.GEMINI_MODEL || env.GEMINI_MODEL || DEFAULT_MODEL
     },
 
     configureServer(server) {
