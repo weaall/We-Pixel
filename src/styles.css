@@ -289,3 +289,68 @@ label.check input {
   background: var(--line);
   margin: 14px 0;
 }
+
+/* 스테이지 위에 미리보기를 얹으려면 기준 컨테이너가 필요하다. */
+.stage {
+  position: relative;
+}
+
+/**
+ * 실제 크기 미리보기.
+ * 캔버스 위에 떠 있으므로 우하단에 붙이고 최소한의 면적만 차지한다.
+ */
+.preview-overlay {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  background: rgb(22 22 29 / 92%);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px;
+  backdrop-filter: blur(4px);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 40%);
+  user-select: none;
+}
+
+.preview-toggle {
+  width: 100%;
+  padding: 3px 8px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+}
+
+.preview-toggle:hover:not(:disabled) {
+  background: var(--panel-2);
+}
+
+.preview-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 6px 6px 2px;
+}
+
+.preview-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.preview-cell canvas {
+  display: block;
+  image-rendering: pixelated;
+  /* 밝은 그림과 어두운 그림 모두 경계가 보이도록 중간 톤 바탕을 깐다. */
+  background: #4a4a58;
+  border-radius: 2px;
+}
+
+.preview-cell span {
+  font-size: 10px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}

@@ -22,6 +22,8 @@ export interface CanvasViewProps {
   onPickColor: (c: RGBA) => void
   onHover: (pos: { x: number; y: number } | null) => void
   onZoomDelta: (delta: number) => void
+  /** 매 페인트 직후 호출. 실제 크기 미리보기를 같은 경로로 갱신한다. */
+  onPaint?: () => void
 }
 
 const SHAPE_TOOLS: ReadonlySet<ToolId> = new Set<ToolId>(['line', 'rect', 'rectFill'])
@@ -39,6 +41,7 @@ export function CanvasView(props: CanvasViewProps) {
     onPickColor,
     onHover,
     onZoomDelta,
+    onPaint,
   } = props
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -59,7 +62,9 @@ export function CanvasView(props: CanvasViewProps) {
     if (!canvas) return
     if (!rendererRef.current) rendererRef.current = new DocRenderer()
     rendererRef.current.draw(canvas, doc, { zoom, showGrid })
-  }, [doc, zoom, showGrid])
+    // 미리보기도 같은 경로로 갱신해야 스트로크 중에 한 박자 늦지 않는다.
+    onPaint?.()
+  }, [doc, zoom, showGrid, onPaint])
 
   useEffect(() => {
     paint()

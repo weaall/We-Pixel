@@ -1,4 +1,5 @@
 import type { StampOptions, ToolId } from '../core/tools'
+import { MAX_ZOOM } from './zoom'
 
 const TOOLS: ReadonlyArray<{ id: ToolId; label: string; key: string }> = [
   { id: 'pen', label: '펜', key: 'B' },
@@ -88,7 +89,7 @@ export function Toolbar(props: ToolbarProps) {
             className="grow"
             type="range"
             min={1}
-            max={32}
+            max={MAX_ZOOM}
             value={props.zoom}
             onChange={(e) => props.setZoom(Number(e.target.value))}
           />

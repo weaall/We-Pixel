@@ -12,6 +12,8 @@ import { CanvasView } from './CanvasView'
 import { ExportPanel } from './ExportPanel'
 import { GeneratePanel } from './GeneratePanel'
 import { DEFAULT_PALETTE, PalettePanel } from './PalettePanel'
+import { PreviewOverlay } from './PreviewOverlay'
+import { fitZoom, MAX_ZOOM } from './zoom'
 import { Toolbar } from './Toolbar'
 import { WorkspacePanel } from './WorkspacePanel'
 
@@ -23,13 +25,6 @@ const SHORTCUT_TOOLS: Record<string, ToolId> = {
   r: 'rect',
   f: 'rectFill',
   i: 'picker',
-}
-
-/** 캔버스가 화면에서 대략 이 크기가 되도록 확대율을 잡는다. */
-const TARGET_VIEW_PX = 512
-
-function fitZoom(w: number, h: number): number {
-  return Math.min(32, Math.max(1, Math.floor(TARGET_VIEW_PX / Math.max(w, h))))
 }
 
 export function App() {
@@ -44,6 +39,15 @@ export function App() {
 
   const [sizeW, setSizeW] = useState('32')
   const [sizeH, setSizeH] = useState('32')
+
+  const stageRef = useRef<HTMLElement | null>(null)
+  const [stageSize, setStageSize] = useState<{ width: number; height: number } | null>(null)
+  /** 미리보기의 다시 그리기 함수. 스트로크 중 React를 거치지 않고 부르기 위해 ref로 둔다. */
+  const previewRedraw = useRef<(() => void) | null>(null)
+  const handlePaint = useCallback(() => previewRedraw.current?.(), [])
+  const registerPreviewRedraw = useCallback((fn: (() => void) | null) => {
+    previewRedraw.current = fn
+  }, [])
 
   const history = useRef(new History())
   // History는 ref에 있어 변경이 렌더를 유발하지 않는다. 버튼 활성 상태를 위해 별도로 센다.
@@ -103,8 +107,34 @@ export function App() {
     replaceDoc(resizeDoc(doc, w, h))
     setSizeW(String(w))
     setSizeH(String(h))
-    setZoom(fitZoom(w, h))
+    userSetZoom.current = false
+    setZoom(fitZoom(w, h, stageSize ?? undefined))
   }
+
+  /**
+   * 스테이지 크기를 관측해 확대율을 맞춘다.
+   *
+   * 사용자가 직접 확대율을 만졌으면 건드리지 않는다 — 창 크기가 바뀔 때마다
+   * 값이 튀면 작업 중에 방해가 된다. 크기 적용이나 새 문서 때만 다시 맞춘다.
+   */
+  const userSetZoom = useRef(false)
+
+  useEffect(() => {
+    const el = stageRef.current
+    if (el === null) return
+
+    const observer = new ResizeObserver(([entry]) => {
+      const box = entry.contentRect
+      setStageSize({ width: box.width, height: box.height })
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => {
+    if (stageSize === null || userSetZoom.current) return
+    setZoom(fitZoom(doc.w, doc.h, stageSize))
+  }, [stageSize, doc.w, doc.h])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -134,7 +164,7 @@ export function App() {
       }
       if (key === '[') setStampOptions((o) => ({ ...o, size: Math.max(1, o.size - 1) }))
       else if (key === ']') setStampOptions((o) => ({ ...o, size: Math.min(8, o.size + 1) }))
-      else if (key === '+' || key === '=') setZoom((z) => Math.min(32, z + 1))
+      else if (key === '+' || key === '=') setZoom((z) => Math.min(MAX_ZOOM, z + 1))
       else if (key === '-') setZoom((z) => Math.max(1, z - 1))
     }
     window.addEventListener('keydown', onKey)
@@ -184,7 +214,10 @@ export function App() {
             stampOptions={stampOptions}
             setStampOptions={setStampOptions}
             zoom={zoom}
-            setZoom={setZoom}
+            setZoom={(z) => {
+              userSetZoom.current = true
+              setZoom(z)
+            }}
             showGrid={showGrid}
             setShowGrid={setShowGrid}
             canUndo={canUndo}
@@ -203,7 +236,7 @@ export function App() {
           />
         </aside>
 
-        <main className="stage">
+        <main className="stage" ref={stageRef}>
           <CanvasView
             doc={doc}
             zoom={zoom}
@@ -215,8 +248,10 @@ export function App() {
             onDocChanged={syncDoc}
             onPickColor={setColor}
             onHover={setHover}
-            onZoomDelta={(d) => setZoom((z) => Math.min(32, Math.max(1, z + d)))}
+            onZoomDelta={(d) => setZoom((z) => Math.min(MAX_ZOOM, Math.max(1, z + d)))}
+            onPaint={handlePaint}
           />
+          <PreviewOverlay doc={doc} registerRedraw={registerPreviewRedraw} />
         </main>
 
         <aside className="side right">
