@@ -7,11 +7,13 @@ import { clear, createDoc, MAX_SIZE, MIN_SIZE, resizeDoc } from '../core/doc'
 import { History } from '../core/history'
 import type { StampOptions, ToolId } from '../core/tools'
 import { defaultStampOptions } from '../core/tools'
+import { AiPanel } from './AiPanel'
 import { CanvasView } from './CanvasView'
 import { ExportPanel } from './ExportPanel'
 import { GeneratePanel } from './GeneratePanel'
 import { DEFAULT_PALETTE, PalettePanel } from './PalettePanel'
 import { Toolbar } from './Toolbar'
+import { WorkspacePanel } from './WorkspacePanel'
 
 const SHORTCUT_TOOLS: Record<string, ToolId> = {
   b: 'pen',
@@ -218,7 +220,11 @@ export function App() {
         </main>
 
         <aside className="side right">
+          <AiPanel width={doc.w} height={doc.h} onGenerate={replaceDoc} />
+          <div className="divider" />
           <GeneratePanel width={doc.w} height={doc.h} onGenerate={replaceDoc} />
+          <div className="divider" />
+          <WorkspacePanel doc={doc} onLoad={replaceDoc} />
           <div className="divider" />
           <ExportPanel doc={doc} />
         </aside>

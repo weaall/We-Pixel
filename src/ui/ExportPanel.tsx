@@ -57,8 +57,9 @@ export function ExportPanel({ doc }: ExportPanelProps) {
         includePostprocessor,
         includeSpec,
         previewScale,
+        encodePng: docToPngBlob,
       })
-      downloadBlob(res.blob, res.filename)
+      downloadBlob(new Blob([res.bytes], { type: 'application/zip' }), res.filename)
       setResult(res)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))

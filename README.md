@@ -5,7 +5,7 @@
 에디터는 웹 네이티브(React + Canvas)이고, 유니티는 결과물의 소비처입니다.
 픽셀 격자를 칠하고 PNG를 뽑는 일에 Unity WebGL을 끼우면 5~15MB 빌드와 재빌드 대기가
 붙는데, 정작 유니티가 필요한 부분은 export 포맷뿐이기 때문입니다.
-현재 번들은 gzip 92KB입니다.
+현재 클라이언트 번들은 gzip 95KB입니다.
 
 ## 시작하기
 
@@ -22,6 +22,9 @@ npm run dev
 | `npm run build` | 타입 체크 + 프로덕션 빌드 |
 | `npm run typecheck` | 타입 체크만 |
 | `npm run preview:sprite -- 32 4` | 생성기 출력을 터미널에 ASCII로 확인 |
+| `npm run mcp:build` | MCP 서버 번들 빌드 (`dist-mcp/server.mjs`) |
+| `npm run mcp:smoke` | MCP 서버 도구 전체를 실제 클라이언트로 검증 |
+| `npm run test:repair` | Gemini 응답 보정 로직 테스트 |
 
 ## 기능
 
@@ -34,6 +37,11 @@ npm run dev
   가장 큰 연결 성분만 남기고 외곽선·명암·포인트 색을 입힙니다.
 - *무늬 / 타일*: fBm을 명암 단계로 양자화합니다. 이음선 없는 타일 옵션 포함.
 
+**AI 생성** — 프롬프트로 픽셀 아트를 만듭니다. 두 경로가 있습니다.
+
+- *MCP*: Claude Code에서 대화로 지시합니다. API 키가 필요 없습니다.
+- *Gemini*: 웹 UI에 프롬프트를 입력합니다. `.env`에 키가 필요합니다.
+
 **내보내기** — 유니티 폴더 구조를 그대로 담은 ZIP입니다.
 압축을 풀고 `Assets`를 프로젝트 루트에 덮어쓰면 끝납니다.
 
@@ -45,6 +53,71 @@ Assets/Editor/PixelArtImportSettings.cs  임포트 설정 강제 (에디터 전�
 <Name>.spec.json                       재편집용 원본 데이터
 preview/<Name>@8x.png                  공유용 확대본 (유니티에 넣지 말 것)
 README.md
+```
+
+## AI 생성
+
+두 경로가 같은 spec 포맷을 공유합니다. 어느 쪽으로 만들어도 결과는 동일한 파일입니다.
+
+### 경로 1 — MCP (권장)
+
+Claude Code 같은 MCP 클라이언트가 이 프로젝트의 도구를 직접 씁니다.
+**API 키도, 서버 배포도, 요청당 과금도 없습니다.**
+
+```bash
+npm run mcp:build
+```
+
+`.mcp.json`이 이미 있으므로 Claude Code를 이 폴더에서 열면 붙습니다.
+
+| 도구 | 하는 일 |
+| --- | --- |
+| `draw_design` | 팔레트 + 행 문자열로 픽셀을 직접 작성 |
+| `patch_rows` | 일부 행만 교체 (전체를 다시 안 보냄) |
+| `generate_sprite` | 알고리즘 스프라이트 생성 |
+| `generate_pattern` | 알고리즘 무늬 / 타일 생성 |
+| `get_design` | 저장된 디자인을 이미지 + 행 데이터로 조회 |
+| `list_designs` | 작업 폴더 목록 |
+| `export_unity_package` | 유니티 ZIP을 `workspace/exports/`에 기록 |
+
+핵심은 **모든 생성/조회 도구가 렌더된 PNG를 함께 반환**한다는 점입니다.
+모델이 자기 결과를 보고 고칠 수 있어야 형태가 제대로 나옵니다.
+좌표만 다루면 그림이 무너집니다.
+
+`draw_design`과 `patch_rows`는 호출자가 쓴 팔레트 문자를 그대로 저장합니다.
+`toSpec`으로 재도출하면 문자가 등장 순서대로 재배정되어, 뒤이은 `patch_rows`가
+자기가 쓴 `k`/`r`를 찾지 못합니다.
+
+### 경로 2 — Gemini 프록시
+
+웹 UI에서 프롬프트를 입력하는 방식입니다.
+
+```bash
+cp .env.example .env
+# .env 에 GEMINI_API_KEY 를 채운 뒤 개발 서버 재시작
+```
+
+키는 Vite 개발 서버 프로세스에서만 읽히며 **클라이언트 번들에 들어가지 않습니다**.
+브라우저에서 직접 호출하면 개발자 도구로 키가 그대로 노출됩니다.
+인증은 쿼리스트링이 아니라 `x-goog-api-key` 헤더로 보냅니다. URL은 로그에 남습니다.
+
+Gemini의 `responseSchema`는 동적 키를 표현할 수 없어 팔레트를 배열로 받아
+서버에서 레코드로 바꿉니다. 그리고 모델이 행 길이를 틀리는 것은 예외가 아니라
+일상이므로, 길이·행 수·미정의 문자를 보정한 뒤 **무엇을 고쳤는지 UI에 알립니다**.
+조용히 고치면 품질 저하의 원인을 찾을 수 없게 됩니다.
+
+배포 시에는 `server/gemini.ts`의 핸들러를 서버리스 함수로 옮기면 됩니다.
+
+### 순환 구조
+
+웹 에디터와 MCP 서버는 같은 작업 폴더(`workspace/`)를 씁니다.
+
+```
+Claude가 draw_design 으로 그림
+   → 웹 에디터의 "작업 폴더"에서 불러와 픽셀 단위로 수정
+   → 저장
+   → Claude가 get_design 으로 수정 결과를 확인
+   → export_unity_package
 ```
 
 ## 설계 메모
@@ -114,16 +187,26 @@ src/
     csharp.ts            액터 스크립트 생성
     package.ts           ZIP 패키징
   ui/                    React 컴포넌트
+mcp/
+  server.ts              MCP 서버 (stdio)
+  png.ts                 Node PNG 인코더 (zlib, 의존성 없음)
+  workspace.ts           spec 파일 IO + 경로 검증
+server/
+  gemini.ts              Gemini 프록시 (Vite 개발 서버 미들웨어)
+  workspaceApi.ts        작업 폴더 API — 에디터와 MCP를 잇는다
 scripts/
   preview-sprite.ts      터미널 ASCII 미리보기
+  mcp-smoke.mjs          MCP 도구 통합 검증
+  repair-test.ts         Gemini 응답 보정 테스트
 ```
 
 ## 다음 단계
 
-1. **AI 생성 연동** — 위 spec 포맷을 tool use 스키마로 강제해 Claude API에 요청.
-   API 키는 브라우저에 둘 수 없으므로 서버 프록시(Node 또는 서버리스 함수)가 필요합니다.
-2. **자동 테스트** — 현재 검증은 수동입니다. 개발 중 `pointerup` 좌표가 반영되지 않아
-   펜 끝이 잘리고 도형 확정 크기가 미리보기와 어긋나는 버그가 있었는데,
-   이런 종류는 회귀 테스트가 있어야 잡힙니다 (vitest + 순수 `core` 단위 테스트).
-3. **스프라이트 시트** — 프레임 여러 장을 한 텍스처로 묶고 `.meta`에 슬라이스 정보 기록.
-4. **레이어** — 현재는 단일 레이어입니다.
+1. **`core` 단위 테스트** — MCP와 보정 로직에는 검증 스크립트가 있지만
+   에디터 도구(`tools.ts`, `history.ts`)는 아직 수동 검증입니다.
+   개발 중 `pointerup` 좌표가 반영되지 않아 펜 끝이 잘리고 도형 확정 크기가
+   미리보기와 어긋나는 버그가 있었는데, 이런 종류는 회귀 테스트가 있어야 잡힙니다.
+2. **스프라이트 시트** — 프레임 여러 장을 한 텍스처로 묶고 `.meta`에 슬라이스 정보 기록.
+   MCP에 `add_frame` 도구를 붙이면 애니메이션도 대화로 만들 수 있습니다.
+3. **레이어** — 현재는 단일 레이어입니다.
+4. **Gemini 프록시 배포** — 지금은 개발 서버 전용입니다.
