@@ -1,0 +1,5 @@
+workspace/
+dist-mcp/
+dist-server/
+mcp/
+node_modules/.tmp/
