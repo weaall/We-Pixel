@@ -9,3 +9,4 @@ Thumbs.db
 .vite/
 dist-mcp/
 workspace/
+dist-server/

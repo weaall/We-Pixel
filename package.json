@@ -5,13 +5,15 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build && npm run mcp:build",
+    "build": "tsc -b && vite build && npm run build:server && npm run mcp:build",
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
     "preview:sprite": "esbuild scripts/preview-sprite.ts --bundle --platform=node --format=esm --outfile=node_modules/.tmp/preview-sprite.mjs --log-level=warning && node node_modules/.tmp/preview-sprite.mjs",
     "mcp:build": "esbuild mcp/server.ts --bundle --platform=node --format=esm --packages=external --outfile=dist-mcp/server.mjs --log-level=warning",
     "mcp:smoke": "npm run mcp:build && node scripts/mcp-smoke.mjs",
-    "test:repair": "esbuild scripts/repair-test.ts --bundle --platform=node --format=esm --packages=external --outfile=node_modules/.tmp/repair-test.mjs --log-level=warning && node node_modules/.tmp/repair-test.mjs"
+    "test:repair": "esbuild scripts/repair-test.ts --bundle --platform=node --format=esm --packages=external --outfile=node_modules/.tmp/repair-test.mjs --log-level=warning && node node_modules/.tmp/repair-test.mjs",
+    "build:server": "esbuild server/serve.ts --bundle --platform=node --format=esm --packages=external --outfile=dist-server/serve.mjs --log-level=warning",
+    "start": "node dist-server/serve.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

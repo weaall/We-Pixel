@@ -1,9 +1,8 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import { geminiPlugin } from './server/gemini'
-import { workspaceApiPlugin } from './server/workspaceApi'
+import { apiPlugin } from './server/vitePlugin'
 
 export default defineConfig({
-  plugins: [react(), geminiPlugin(), workspaceApiPlugin()],
+  plugins: [react(), apiPlugin()],
   server: { port: 5173 },
 })

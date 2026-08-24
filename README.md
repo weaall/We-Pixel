@@ -22,6 +22,7 @@ npm run dev
 | `npm run build` | 타입 체크 + 프로덕션 빌드 |
 | `npm run typecheck` | 타입 체크만 |
 | `npm run preview:sprite -- 32 4` | 생성기 출력을 터미널에 ASCII로 확인 |
+| `npm start` | 빌드된 결과를 배포용 서버로 실행 (정적 파일 + API) |
 | `npm run mcp:build` | MCP 서버 번들 빌드 (`dist-mcp/server.mjs`) |
 | `npm run mcp:smoke` | MCP 서버 도구 전체를 실제 클라이언트로 검증 |
 | `npm run test:repair` | Gemini 응답 보정 로직 테스트 |
@@ -114,7 +115,25 @@ Gemini의 `responseSchema`는 동적 키를 표현할 수 없어 팔레트를 �
 일상이므로, 길이·행 수·미정의 문자를 보정한 뒤 **무엇을 고쳤는지 UI에 알립니다**.
 조용히 고치면 품질 저하의 원인을 찾을 수 없게 됩니다.
 
-배포 시에는 `server/gemini.ts`의 핸들러를 서버리스 함수로 옮기면 됩니다.
+### 배포
+
+API 핸들러는 Vite를 import하지 않으므로 개발 서버와 배포 서버가 같은 코드를 씁니다.
+`server/api.ts`의 `createApiRouter`가 라우팅을 한 곳에 모아 두는 지점입니다.
+
+```bash
+npm run build
+GEMINI_API_KEY=여기에_키 npm start     # 기본 4173, PORT 로 변경
+```
+
+`npm start`는 `dist/`를 서비스하면서 같은 API를 붙입니다. Node가 도는 곳이면
+(VPS, Render, Railway, Fly 등) 그대로 올라갑니다.
+
+**정적 호스팅만 쓰면 AI 생성이 동작하지 않습니다.** GitHub Pages, S3 등에
+`dist/`만 올리면 `/api/generate`가 없어 404입니다. 이 경우 이 서버를 따로 띄우거나
+`createApiRouter`를 서버리스 함수로 감싸야 합니다. 에디터와 알고리즘 생성,
+export는 정적 호스팅에서도 전부 동작합니다.
+
+`npm run preview`에도 API가 붙어 있어 배포 전에 프로덕션 번들로 확인할 수 있습니다.
 
 ### 순환 구조
 
@@ -199,9 +218,14 @@ mcp/
   server.ts              MCP 서버 (stdio)
   png.ts                 Node PNG 인코더 (zlib, 의존성 없음)
   workspace.ts           spec 파일 IO + 경로 검증
-server/
-  gemini.ts              Gemini 프록시 (Vite 개발 서버 미들웨어)
+server/                  Vite를 import하지 않음 — 개발/배포가 같은 코드를 쓴다
+  api.ts                 라우터 (개발 서버와 배포 서버가 공유)
+  gemini.ts              Gemini 프록시 핸들러 + 응답 보정
   workspaceApi.ts        작업 폴더 API — 에디터와 MCP를 잇는다
+  env.ts                 설정 로딩 (.env 직접 파싱)
+  http.ts                ApiHandler 타입 + 공통 헬퍼
+  vitePlugin.ts          개발/preview 서버에 라우터 마운트
+  serve.ts               배포용 독립 실행 서버 (정적 파일 + API)
 scripts/
   preview-sprite.ts      터미널 ASCII 미리보기
   mcp-smoke.mjs          MCP 도구 통합 검증
@@ -217,4 +241,3 @@ scripts/
 2. **스프라이트 시트** — 프레임 여러 장을 한 텍스처로 묶고 `.meta`에 슬라이스 정보 기록.
    MCP에 `add_frame` 도구를 붙이면 애니메이션도 대화로 만들 수 있습니다.
 3. **레이어** — 현재는 단일 레이어입니다.
-4. **Gemini 프록시 배포** — 지금은 개발 서버 전용입니다.

@@ -1,20 +1,19 @@
-import type { IncomingMessage, ServerResponse } from 'node:http'
-import type { Plugin } from 'vite'
-import { loadEnv } from 'vite'
 import type { PixelSpec } from '../src/core/codec'
 import { TRANSPARENT_CHAR } from '../src/core/codec'
+import type { ServerConfig } from './env'
+import type { ApiHandler } from './http'
+import { readBody, send } from './http'
 
 /**
  * Gemini 프록시.
  *
  * API 키는 서버에만 있어야 한다. 브라우저에서 직접 부르면 개발자 도구로
- * 키가 그대로 노출된다. 그래서 Vite 개발 서버에 미들웨어로 붙인다.
- * 키는 loadEnv로 읽으며 클라이언트 번들에는 들어가지 않는다.
+ * 키가 그대로 노출된다.
  *
- * 배포 시에는 이 핸들러 로직을 서버리스 함수로 옮기면 된다.
+ * 이 파일은 Vite를 import하지 않는다. 개발 서버와 배포 서버가 같은 핸들러를
+ * 그대로 써야 "개발에서는 되는데 배포하면 404"가 생기지 않는다.
  */
 
-const DEFAULT_MODEL = 'gemini-2.5-flash'
 const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models'
 
 const SYSTEM_INSTRUCTION = [
@@ -176,102 +175,58 @@ async function callGemini(
   return JSON.parse(text) as RawResult
 }
 
-function readBody(req: IncomingMessage): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = []
-    let size = 0
-    req.on('data', (c: Buffer) => {
-      size += c.length
-      if (size > 64 * 1024) {
-        reject(new Error('요청 본문이 너무 큽니다.'))
-        req.destroy()
-        return
-      }
-      chunks.push(c)
-    })
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
-    req.on('error', reject)
-  })
-}
+/** POST /api/generate 와 GET /api/generate (상태 확인). */
+export function createGeminiHandler(config: ServerConfig): ApiHandler {
+  return async (req, res, url) => {
+    if (url.pathname !== '/api/generate') return false
 
-function send(res: ServerResponse, status: number, body: unknown): void {
-  const text = JSON.stringify(body)
-  res.statusCode = status
-  res.setHeader('content-type', 'application/json; charset=utf-8')
-  res.end(text)
-}
+    if (req.method === 'GET') {
+      send(res, 200, { ready: config.apiKey.length > 0, model: config.model })
+      return true
+    }
+    if (req.method !== 'POST') {
+      send(res, 405, { error: `${req.method} 는 지원하지 않습니다.` })
+      return true
+    }
 
-/** Vite 개발 서버에 POST /api/generate 를 붙인다. */
-export function geminiPlugin(): Plugin {
-  let apiKey = ''
-  let model = DEFAULT_MODEL
-
-  return {
-    name: 'we-pixel-gemini',
-    apply: 'serve',
-
-    config(_config, { mode }) {
-      // 접두사 ''로 불러야 VITE_ 가 아닌 변수까지 읽는다.
-      // define으로 넘기지 않으므로 클라이언트 번들에는 들어가지 않는다.
-      const env = loadEnv(mode, process.cwd(), '')
-
-      // 셸에서 넘긴 환경변수를 먼저 본다. .env 파일을 만들지 않고
-      //   GEMINI_API_KEY=... npm run dev
-      // 로 바로 띄울 수 있어야 한다.
-      apiKey = process.env.GEMINI_API_KEY || env.GEMINI_API_KEY || ''
-      model = process.env.GEMINI_MODEL || env.GEMINI_MODEL || DEFAULT_MODEL
-    },
-
-    configureServer(server) {
-      server.middlewares.use('/api/generate', async (req, res, next) => {
-        if (req.method === 'GET') {
-          send(res, 200, { ready: apiKey.length > 0, model })
-          return
-        }
-        if (req.method !== 'POST') {
-          next()
-          return
-        }
-
-        if (apiKey.length === 0) {
-          send(res, 503, {
-            error:
-              'GEMINI_API_KEY 가 설정되지 않았습니다. .env.example 을 .env 로 복사하고 키를 채운 뒤 개발 서버를 다시 시작하세요.',
-          })
-          return
-        }
-
-        try {
-          const parsed = JSON.parse(await readBody(req)) as {
-            prompt?: unknown
-            w?: unknown
-            h?: unknown
-          }
-          const prompt = typeof parsed.prompt === 'string' ? parsed.prompt.trim() : ''
-          const w = Math.min(64, Math.max(8, Number(parsed.w) || 32))
-          const h = Math.min(64, Math.max(8, Number(parsed.h) || 32))
-
-          if (prompt.length === 0) {
-            send(res, 400, { error: '프롬프트가 비어 있습니다.' })
-            return
-          }
-          // 64px을 넘으면 행 문자열이 길어져 모델이 글자 수를 유지하지 못한다.
-          if (Number(parsed.w) > 64 || Number(parsed.h) > 64) {
-            send(res, 400, {
-              error: 'AI 생성은 64x64까지 지원합니다. 더 큰 캔버스는 생성 후 크기를 늘리세요.',
-            })
-            return
-          }
-
-          const raw = await callGemini(apiKey, model, prompt, w, h)
-          const { warnings, ...spec } = repairSpec(raw, w, h)
-          send(res, 200, { spec, warnings, model } satisfies GenerateResponse)
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err)
-          server.config.logger.error(`[gemini] ${message}`)
-          send(res, 502, { error: message })
-        }
+    if (config.apiKey.length === 0) {
+      send(res, 503, {
+        error:
+          'GEMINI_API_KEY 가 설정되지 않았습니다. GEMINI_API_KEY=... 로 서버를 실행하거나 .env 에 채우세요.',
       })
-    },
+      return true
+    }
+
+    try {
+      const parsed = JSON.parse(await readBody(req, 64 * 1024)) as {
+        prompt?: unknown
+        w?: unknown
+        h?: unknown
+      }
+      const prompt = typeof parsed.prompt === 'string' ? parsed.prompt.trim() : ''
+      const w = Math.min(64, Math.max(8, Number(parsed.w) || 32))
+      const h = Math.min(64, Math.max(8, Number(parsed.h) || 32))
+
+      if (prompt.length === 0) {
+        send(res, 400, { error: '프롬프트가 비어 있습니다.' })
+        return true
+      }
+      // 64px을 넘으면 행 문자열이 길어져 모델이 글자 수를 유지하지 못한다.
+      if (Number(parsed.w) > 64 || Number(parsed.h) > 64) {
+        send(res, 400, {
+          error: 'AI 생성은 64x64까지 지원합니다. 더 큰 캔버스는 생성 후 크기를 늘리세요.',
+        })
+        return true
+      }
+
+      const raw = await callGemini(config.apiKey, config.model, prompt, w, h)
+      const { warnings, ...spec } = repairSpec(raw, w, h)
+      send(res, 200, { spec, warnings, model: config.model } satisfies GenerateResponse)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      console.error(`[gemini] ${message}`)
+      send(res, 502, { error: message })
+    }
+    return true
   }
 }
