@@ -23,6 +23,7 @@ npm run dev
 | `npm run typecheck` | 타입 체크만 |
 | `npm run preview:sprite -- 32 4` | 생성기 출력을 터미널에 ASCII로 확인 |
 | `npm start` | 빌드된 결과를 배포용 서버로 실행 (정적 파일 + API) |
+| `npm run deploy` | Vercel 프로덕션 배포 (`npx vercel login` 먼저) |
 | `npm run mcp:build` | MCP 서버 번들 빌드 (`dist-mcp/server.mjs`) |
 | `npm run mcp:smoke` | MCP 서버 도구 전체를 실제 클라이언트로 검증 |
 | `npm run test:repair` | Gemini 응답 보정 로직 테스트 |
@@ -127,6 +128,23 @@ GEMINI_API_KEY=여기에_키 npm start     # 기본 4173, PORT 로 변경
 
 `npm start`는 `dist/`를 서비스하면서 같은 API를 붙입니다. Node가 도는 곳이면
 (VPS, Render, Railway, Fly 등) 그대로 올라갑니다.
+
+#### Vercel
+
+`api/generate.ts`가 `server/gemini.ts`의 핸들러를 그대로 얹은 서버리스 함수입니다.
+개발 서버, `npm start`, Vercel 함수가 전부 같은 핸들러를 공유합니다.
+
+```bash
+npx vercel login      # 브라우저 인증 (한 번만)
+npm run deploy        # = vercel --prod
+```
+
+`vercel`을 devDependency로 넣지 않았습니다(~50MB). `npx`로 그때만 받아 씁니다.
+배포 후 Vercel 대시보드 > Settings > Environment Variables 에 `GEMINI_API_KEY`를
+넣고 재배포해야 AI 생성이 켜집니다.
+
+GitHub 저장소를 Vercel 대시보드에서 연결하면 push마다 자동 배포됩니다.
+CLI 없이 쓰려면 이쪽이 편합니다.
 
 **정적 호스팅만 쓰면 AI 생성이 동작하지 않습니다.** GitHub Pages, S3 등에
 `dist/`만 올리면 `/api/generate`가 없어 404입니다. 이 경우 이 서버를 따로 띄우거나
