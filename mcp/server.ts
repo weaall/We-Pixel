@@ -22,7 +22,7 @@ import {
   saveSpec,
   workspaceRoot,
   writeExport,
-} from './workspace'
+} from '../server/workspace'
 
 /**
  * We-Pixel MCP 서버.

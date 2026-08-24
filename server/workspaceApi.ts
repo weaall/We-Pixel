@@ -1,6 +1,6 @@
 import { fromSpec } from '../src/core/codec'
 import type { PixelSpec } from '../src/core/codec'
-import { listSpecs, loadSpec, saveSpec, workspaceRoot } from '../mcp/workspace'
+import { listSpecs, loadSpec, saveSpec, workspaceRoot } from './workspace'
 import type { ApiHandler } from './http'
 import { readBody, send } from './http'
 

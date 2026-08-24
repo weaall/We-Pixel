@@ -10,3 +10,5 @@ Thumbs.db
 dist-mcp/
 workspace/
 dist-server/
+
+.vercel

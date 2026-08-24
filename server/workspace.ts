@@ -3,7 +3,11 @@ import { isAbsolute, join, resolve, sep } from 'node:path'
 import type { PixelSpec } from '../src/core/codec'
 
 /**
- * MCP 서버가 읽고 쓰는 작업 폴더.
+ * spec 파일 저장소. MCP 서버와 웹 에디터 API가 공유한다.
+ *
+ * server/ 에 두는 이유: server/workspaceApi.ts 가 이 로직을 쓰는데, 이게 mcp/ 에
+ * 있으면 배포 시 mcp/ 를 제외하는 순간 server/ 타입 체크가 깨진다.
+ * 파일시스템 접근은 서버 계층의 관심사이므로 여기가 제 자리다.
  *
  * 이름은 MCP 클라이언트(=모델)가 넘기는 값이므로 경로로 신뢰할 수 없다.
  * 문자 화이트리스트로 걸러낸 뒤, 최종 경로가 작업 폴더 안에 있는지 다시 확인한다.
