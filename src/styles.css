@@ -354,3 +354,79 @@ label.check input {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
+
+/* 이미지 가져오기 */
+.dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 16px 10px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: #14141c;
+  cursor: pointer;
+  text-align: center;
+  transition: border-color 120ms, background 120ms;
+}
+
+.dropzone:hover,
+.dropzone.over {
+  border-color: var(--accent);
+  background: #171724;
+}
+
+.dropzone strong {
+  font-size: 12px;
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.dropzone span {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.preset-row {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.preset-row button {
+  padding: 5px 0;
+  font-size: 11px;
+}
+
+.import-preview {
+  display: grid;
+  place-items: center;
+  margin-top: 10px;
+  padding: 10px;
+  background: #14141c;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.import-preview canvas {
+  display: block;
+  image-rendering: pixelated;
+  background: #4a4a58;
+  border-radius: 2px;
+}
+
+/* 캔버스 위로 파일을 끌어올 때 */
+.stage.drag-over::after {
+  content: '이미지를 놓으면 가져옵니다';
+  position: absolute;
+  inset: 12px;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--accent);
+  border-radius: 12px;
+  background: rgb(108 158 248 / 10%);
+  color: var(--accent);
+  font-weight: 600;
+  pointer-events: none;
+}

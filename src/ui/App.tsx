@@ -11,6 +11,7 @@ import { AiPanel } from './AiPanel'
 import { CanvasView } from './CanvasView'
 import { ExportPanel } from './ExportPanel'
 import { GeneratePanel } from './GeneratePanel'
+import { ImportPanel } from './ImportPanel'
 import { DEFAULT_PALETTE, PalettePanel } from './PalettePanel'
 import { PreviewOverlay } from './PreviewOverlay'
 import { fitZoom, MAX_ZOOM } from './zoom'
@@ -48,6 +49,13 @@ export function App() {
   const registerPreviewRedraw = useCallback((fn: (() => void) | null) => {
     previewRedraw.current = fn
   }, [])
+
+  /** 캔버스 위에 이미지를 떨어뜨리면 가져오기 패널이 받는다. */
+  const importDrop = useRef<((file: File) => void) | null>(null)
+  const registerImportDrop = useCallback((fn: ((file: File) => void) | null) => {
+    importDrop.current = fn
+  }, [])
+  const [stageDragging, setStageDragging] = useState(false)
 
   const history = useRef(new History())
   // History는 ref에 있어 변경이 렌더를 유발하지 않는다. 버튼 활성 상태를 위해 별도로 센다.
@@ -236,7 +244,26 @@ export function App() {
           />
         </aside>
 
-        <main className="stage" ref={stageRef}>
+        <main
+          className={`stage${stageDragging ? ' drag-over' : ''}`}
+          ref={stageRef}
+          onDragOver={(e) => {
+            if (!e.dataTransfer.types.includes('Files')) return
+            e.preventDefault()
+            setStageDragging(true)
+          }}
+          onDragLeave={(e) => {
+            // 자식 위로 옮겨갈 때도 leave가 오므로 스테이지를 실제로 벗어났는지 본다.
+            if (e.currentTarget.contains(e.relatedTarget as Node | null)) return
+            setStageDragging(false)
+          }}
+          onDrop={(e) => {
+            e.preventDefault()
+            setStageDragging(false)
+            const f = e.dataTransfer.files[0]
+            if (f) importDrop.current?.(f)
+          }}
+        >
           <CanvasView
             doc={doc}
             zoom={zoom}
@@ -258,6 +285,13 @@ export function App() {
           <AiPanel width={doc.w} height={doc.h} onGenerate={replaceDoc} />
           <div className="divider" />
           <GeneratePanel width={doc.w} height={doc.h} onGenerate={replaceDoc} />
+          <div className="divider" />
+          <ImportPanel
+            width={doc.w}
+            height={doc.h}
+            onApply={replaceDoc}
+            registerDrop={registerImportDrop}
+          />
           <div className="divider" />
           <WorkspacePanel doc={doc} onLoad={replaceDoc} />
           <div className="divider" />
