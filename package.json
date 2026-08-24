@@ -14,9 +14,10 @@
     "test:repair": "esbuild scripts/repair-test.ts --bundle --platform=node --format=esm --packages=external --outfile=node_modules/.tmp/repair-test.mjs --log-level=warning && node node_modules/.tmp/repair-test.mjs",
     "build:server": "esbuild server/serve.ts --bundle --platform=node --format=esm --packages=external --outfile=dist-server/serve.mjs --log-level=warning",
     "start": "node dist-server/serve.mjs",
-    "vercel-build": "tsc -b && vite build",
+    "vercel-build": "tsc -b && vite build && npm run build:fn",
     "deploy": "npx --yes vercel@latest --prod",
-    "deploy:preview": "npx --yes vercel@latest"
+    "deploy:preview": "npx --yes vercel@latest",
+    "build:fn": "esbuild server/vercel-generate.ts --bundle --platform=node --format=esm --outfile=api/generate.js --log-level=warning --banner:js=\"// 생성된 파일입니다. 편집하지 마세요. 소스: server/vercel-generate.ts (npm run build:fn)\""
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
