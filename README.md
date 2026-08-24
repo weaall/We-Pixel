@@ -151,6 +151,23 @@ CLI 없이 쓰려면 이쪽이 편합니다.
 `createApiRouter`를 서버리스 함수로 감싸야 합니다. 에디터와 알고리즘 생성,
 export는 정적 호스팅에서도 전부 동작합니다.
 
+#### 저장소는 환경에 따라 갈립니다
+
+`src/storage/specStore.ts`가 시작할 때 `/api/designs`를 한 번 찔러보고 고릅니다.
+
+| 환경 | 저장소 | MCP 순환 |
+| --- | --- | --- |
+| `npm run dev`, `npm start` | 서버 (`workspace/`) | 동작 |
+| 서버리스 배포 (Vercel) | 브라우저 localStorage | 불가 |
+
+서버리스의 파일시스템은 권한 설정으로 열 수 있는 것이 아닙니다. `/tmp` 외에는
+읽기 전용이고, `/tmp`조차 인스턴스마다 따로이며 재활용되면 사라집니다.
+그리고 권한과 별개로 **위치 문제**가 남습니다 — MCP 서버는 사용자 PC에서
+로컬 파일을 읽으므로, 원격 서버가 그 디스크를 볼 방법이 없습니다.
+
+배포판에서는 브라우저에 저장하고, 작업물을 챙겨 나갈 때는 `파일로 내보내기`로
+`.spec.json`을 내려받습니다. `파일 열기`로 어느 환경에서든 다시 불러옵니다.
+
 `npm run preview`에도 API가 붙어 있어 배포 전에 프로덕션 번들로 확인할 수 있습니다.
 
 ### 순환 구조
@@ -231,6 +248,8 @@ src/
     unityMeta.ts         .meta + AssetPostprocessor 생성
     csharp.ts            액터 스크립트 생성
     package.ts           ZIP 패키징
+  storage/
+    specStore.ts         디자인 저장소 (서버 API / 브라우저 localStorage)
   ui/                    React 컴포넌트
 mcp/
   server.ts              MCP 서버 (stdio)

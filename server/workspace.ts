@@ -1,6 +1,7 @@
 import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { isAbsolute, join, resolve, sep } from 'node:path'
 import type { PixelSpec } from '../src/core/codec'
+import { DESIGN_NAME_RULE, isValidDesignName } from '../src/core/names'
 
 /**
  * spec 파일 저장소. MCP 서버와 웹 에디터 API가 공유한다.
@@ -29,9 +30,7 @@ export function exportsDir(): string {
 
 export class InvalidNameError extends Error {
   constructor(raw: string) {
-    super(
-      `잘못된 이름 "${raw}". 영문, 숫자, 밑줄, 하이픈만 쓸 수 있습니다 (최대 64자).`,
-    )
+    super(`잘못된 이름 "${raw}". ${DESIGN_NAME_RULE}`)
     this.name = 'InvalidNameError'
   }
 }
@@ -39,7 +38,7 @@ export class InvalidNameError extends Error {
 /** 경로 조작을 막기 위해 파일명으로 쓸 수 있는 문자만 통과시킨다. */
 export function assertSafeName(raw: string): string {
   const name = raw.trim()
-  if (!/^[A-Za-z0-9_-]{1,64}$/.test(name)) throw new InvalidNameError(raw)
+  if (!isValidDesignName(name)) throw new InvalidNameError(raw)
   return name
 }
 
