@@ -72,6 +72,64 @@ export interface GenerateResponse {
  * 모델이 글자 수를 틀리는 것은 흔한 일이다. 실패로 되돌리기보다 고쳐 쓰고 무엇을
  * 고쳤는지 알린다. 조용히 고치면 품질 문제를 사용자가 눈치채지 못한다.
  */
+/**
+ * 행을 목표 너비에 맞춘다.
+ *
+ * 끝에서 자르거나 채우면 그림 전체가 한쪽으로 밀린다. 스프라이트는 보통
+ * 가운데 정렬이라 좌우 대칭이 깨지고 형태가 무너진다. 양쪽에서 고르게 맞춘다.
+ */
+export function fitRow(row: string, w: number): string {
+  if (row.length === w) return row
+  if (row.length > w) {
+    const extra = row.length - w
+    const left = Math.floor(extra / 2)
+    return row.slice(left, left + w)
+  }
+  const missing = w - row.length
+  const left = Math.floor(missing / 2)
+  return TRANSPARENT_CHAR.repeat(left) + row + TRANSPARENT_CHAR.repeat(missing - left)
+}
+
+/**
+ * 문자 그리드를 정수배로 확대한다.
+ *
+ * 문서로 바꿔 리샘플하지 않고 spec 상태에서 처리한다. 문자를 복제하는 것뿐이라
+ * 색이 늘지 않고, 팔레트 한도(75색)에도 걸리지 않는다.
+ */
+export function upscaleRows(rows: string[], factor: number): string[] {
+  if (factor <= 1) return rows
+  const out: string[] = []
+  for (const row of rows) {
+    const wide = [...row].map((ch) => ch.repeat(factor)).join('')
+    for (let i = 0; i < factor; i++) out.push(wide)
+  }
+  return out
+}
+
+/**
+ * 모델에게 시킬 그리드 크기.
+ *
+ * 64px만 되어도 행마다 64글자를 세어야 해서 모델이 길이를 자주 틀린다.
+ * 실측으로 64x64에서 23개 행이 어긋났고 형태가 세 조각으로 갈라졌다.
+ * 작게 그리게 하고 정수배로 키우는 편이 훨씬 낫다.
+ */
+export const MAX_MODEL_SIZE = 32
+
+/** 캔버스 상한. 이 크기까지는 확대로 만들어 준다. */
+export const MAX_CANVAS = 256
+
+export function planGeneration(
+  w: number,
+  h: number,
+): { genW: number; genH: number; factor: number } {
+  const factor = Math.max(1, Math.ceil(Math.max(w, h) / MAX_MODEL_SIZE))
+  return {
+    genW: Math.max(8, Math.round(w / factor)),
+    genH: Math.max(8, Math.round(h / factor)),
+    factor,
+  }
+}
+
 export function repairSpec(raw: RawResult, w: number, h: number): GenerateResponse['spec'] & { warnings: string[] } {
   const warnings: string[] = []
   const palette: Record<string, string> = { [TRANSPARENT_CHAR]: 'transparent' }
@@ -100,7 +158,7 @@ export function repairSpec(raw: RawResult, w: number, h: number): GenerateRespon
     let fixed = row
     if (fixed.length !== w) {
       lengthFixes++
-      fixed = fixed.length > w ? fixed.slice(0, w) : fixed + TRANSPARENT_CHAR.repeat(w - fixed.length)
+      fixed = fitRow(fixed, w)
     }
     // 팔레트에 없는 글자는 투명으로 떨어뜨린다. fromSpec이 던지는 것보다 낫다.
     return [...fixed]
@@ -204,23 +262,38 @@ export function createGeminiHandler(config: ServerConfig): ApiHandler {
         h?: unknown
       }
       const prompt = typeof parsed.prompt === 'string' ? parsed.prompt.trim() : ''
-      const w = Math.min(64, Math.max(8, Number(parsed.w) || 32))
-      const h = Math.min(64, Math.max(8, Number(parsed.h) || 32))
+      const w = Math.min(MAX_CANVAS, Math.max(8, Number(parsed.w) || 32))
+      const h = Math.min(MAX_CANVAS, Math.max(8, Number(parsed.h) || 32))
 
       if (prompt.length === 0) {
         send(res, 400, { error: '프롬프트가 비어 있습니다.' })
         return true
       }
-      // 64px을 넘으면 행 문자열이 길어져 모델이 글자 수를 유지하지 못한다.
-      if (Number(parsed.w) > 64 || Number(parsed.h) > 64) {
+      if (Number(parsed.w) > MAX_CANVAS || Number(parsed.h) > MAX_CANVAS) {
         send(res, 400, {
-          error: 'AI 생성은 64x64까지 지원합니다. 더 큰 캔버스는 생성 후 크기를 늘리세요.',
+          error: `AI 생성은 ${MAX_CANVAS}x${MAX_CANVAS}까지 지원합니다.`,
         })
         return true
       }
 
-      const raw = await callGemini(config.apiKey, config.model, prompt, w, h)
-      const { warnings, ...spec } = repairSpec(raw, w, h)
+      // 큰 캔버스는 모델에게 직접 시키지 않는다. 작게 그리게 하고 정수배로 키운다.
+      const { genW, genH, factor } = planGeneration(w, h)
+      const raw = await callGemini(config.apiKey, config.model, prompt, genW, genH)
+      const repaired = repairSpec(raw, genW, genH)
+      const warnings = [...repaired.warnings]
+
+      let rows = repaired.rows
+      if (factor > 1) {
+        rows = upscaleRows(rows, factor).map((row) => fitRow(row, w))
+        // 반올림 때문에 행 수가 목표와 어긋날 수 있다.
+        rows = rows.slice(0, h)
+        while (rows.length < h) rows.push(TRANSPARENT_CHAR.repeat(w))
+        warnings.push(
+          `${genW}x${genH}로 생성해 ${factor}배로 키웠습니다. 모델이 큰 그리드에서는 글자 수를 유지하지 못해 형태가 무너집니다.`,
+        )
+      }
+
+      const spec = { w, h, palette: repaired.palette, rows }
       send(res, 200, { spec, warnings, model: config.model } satisfies GenerateResponse)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)

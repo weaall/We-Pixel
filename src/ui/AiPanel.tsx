@@ -15,7 +15,7 @@ interface Status {
 }
 
 /** AI 생성 한계. 이보다 크면 모델이 행 길이를 유지하지 못한다. */
-const MAX_AI_SIZE = 64
+const MAX_AI_SIZE = 256
 
 export function AiPanel(props: AiPanelProps) {
   const [prompt, setPrompt] = useState('')
