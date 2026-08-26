@@ -19,7 +19,7 @@ interface Status {
   model: string
 }
 
-type Mode = 'create' | 'edit' | 'add'
+type Mode = 'create' | 'recolor' | 'add' | 'edit'
 
 /**
  * 기본 명령어. 프롬프트를 처음부터 쓰지 않아도 되게 한다.
@@ -29,8 +29,9 @@ type Mode = 'create' | 'edit' | 'add'
  */
 const PRESETS: Record<Mode, ReadonlyArray<string>> = {
   create: ['고블린 전사', '체력 물약', '나무 상자', '돌 블록 타일', '검', '슬라임'],
-  edit: ['몸 색을 빨갛게', '화난 표정으로', '외곽선을 더 어둡게', '명암을 뚜렷하게'],
+  recolor: ['빨간색으로', '금속 재질로', '밤 버전으로', '얼음 속성으로', '용암 느낌으로', '흑백으로'],
   add: ['모자 씌우기', '무기 들려주기', '발밑에 그림자', '망토 달기', '뿔 달기', '눈 추가'],
+  edit: ['화난 표정으로', '외곽선을 더 어둡게', '명암을 뚜렷하게', '더 두껍게'],
 }
 
 /** AI 생성 한계. */
@@ -142,6 +143,9 @@ export function AiPanel(props: AiPanelProps) {
         <button className={mode === 'create' ? 'active' : ''} onClick={() => setMode('create')}>
           새로 그리기
         </button>
+        <button className={mode === 'recolor' ? 'active' : ''} onClick={() => setMode('recolor')}>
+          색만 바꾸기
+        </button>
         <button className={mode === 'add' ? 'active' : ''} onClick={() => setMode('add')}>
           덧붙이기
         </button>
@@ -161,11 +165,12 @@ export function AiPanel(props: AiPanelProps) {
       <textarea
         style={{ marginTop: 8 }}
         placeholder={
-          mode === 'create'
-            ? '그릴 대상을 적으세요.\n예: 초록 고블린 전사, 정면, 손에 곤봉'
-            : mode === 'add'
-              ? '덧붙일 것을 적으세요.\n예: 모자를 씌워줘 / 손에 검을 들려줘'
-              : '무엇을 바꿀지 적으세요.\n예: 몸을 빨갛게 / 화난 표정으로'
+          {
+            create: '그릴 대상을 적으세요.\n예: 초록 고블린 전사, 정면, 손에 곤봉',
+            recolor: '어떤 색으로 바꿀지 적으세요.\n예: 빨간색으로 / 금속 재질로 / 밤 버전으로',
+            add: '덧붙일 것을 적으세요.\n예: 모자를 씌워줘 / 손에 검을 들려줘',
+            edit: '무엇을 바꿀지 적으세요.\n예: 화난 표정으로 / 외곽선을 더 어둡게',
+          }[mode]
         }
         value={prompt}
         spellCheck={false}
@@ -180,8 +185,12 @@ export function AiPanel(props: AiPanelProps) {
         disabled={disabled}
       >
         {busy
-          ? { create: '그리는 중…', add: '덧붙이는 중…', edit: '고치는 중…' }[mode]
-          : `${props.width}×${props.height} 로 ${{ create: '생성', add: '덧붙이기', edit: '고치기' }[mode]}`}
+          ? { create: '그리는 중…', recolor: '색 고르는 중…', add: '덧붙이는 중…', edit: '고치는 중…' }[
+              mode
+            ]
+          : mode === 'recolor'
+            ? '색 바꾸기'
+            : `${props.width}×${props.height} 로 ${{ create: '생성', add: '덧붙이기', edit: '고치기' }[mode]}`}
       </button>
 
       {status?.ready === false && (
@@ -203,6 +212,8 @@ export function AiPanel(props: AiPanelProps) {
       {error && <p className="err">{error}</p>}
       <p className="hint">
         {mode === 'create' && '생성하면 현재 캔버스를 덮어씁니다. '}
+        {mode === 'recolor' &&
+          '모델에게 그림이 아니라 색 목록만 받아 기존 픽셀에 적용합니다. 모양은 한 픽셀도 바뀌지 않습니다. '}
         {mode === 'add' &&
           '기존 그림이 있는 자리는 서버가 그대로 지킵니다. 모델이 전체를 다시 그려 보내도 빈 자리에만 반영됩니다. '}
         {mode === 'edit' &&

@@ -2,6 +2,10 @@ import type { PixelSpec } from '../src/core/codec'
 import { fromSpec, toSpec, TRANSPARENT_CHAR } from '../src/core/codec'
 import { resample } from '../src/core/resample'
 import { quantize } from '../src/core/quantize'
+import { usedColors } from '../src/core/codec'
+import { parseHex } from '../src/core/color'
+import type { RGBA } from '../src/core/color'
+import { replaceColors } from '../src/core/recolor'
 import { getPixel, setPixel } from '../src/core/doc'
 import type { PixelDoc } from '../src/core/doc'
 import type { ServerConfig } from './env'
@@ -74,6 +78,46 @@ const ADD_INSTRUCTION = [
   'palette의 char는 반드시 한 글자이며, "." 은 투명으로 예약되어 있으니 palette에 넣지 마세요.',
   'rows는 정확히 h개의 문자열이고, 각 문자열은 정확히 w글자여야 합니다. 글자 수를 세면서 작성하세요.',
 ].join('\n')
+
+/**
+ * 팔레트 교체 지시.
+ *
+ * 그리드를 받지 않는 것이 핵심이다. 모델에게 그림을 그리게 하면 "색만 바꿔줘"라고
+ * 해도 형태가 같이 바뀐다 — 주사위 눈 모양이 달라지는 식이다. 색 목록만 받아
+ * 기존 픽셀에 적용하면 모양은 한 픽셀도 바뀔 수 없다.
+ */
+const RECOLOR_INSTRUCTION = [
+  '당신은 픽셀 아트의 색 배합을 정하는 사람입니다.',
+  '',
+  '주어진 팔레트의 각 색을 요청에 맞는 새 색으로 바꿔 돌려주세요.',
+  '',
+  '규칙:',
+  '- 그림을 그리지 마세요. 색 목록만 돌려줍니다.',
+  '- 받은 char를 하나도 빠짐없이, 그대로 돌려주세요. 새 char를 만들지 마세요.',
+  '- 명암 관계를 유지하세요. 원본에서 어두웠던 색은 새 배합에서도 어두워야 합니다.',
+  '- 바꿀 필요가 없는 색은 원래 값을 그대로 돌려주세요.',
+  '- hex는 "#rrggbb" 형식입니다.',
+].join('\n')
+
+/** 팔레트만 받을 때 쓰는 스키마. rows가 없으므로 모델이 그림을 그릴 수 없다. */
+const PALETTE_ONLY_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    palette: {
+      type: 'ARRAY',
+      description: '받은 것과 같은 char 목록. 각 hex만 새 색으로.',
+      items: {
+        type: 'OBJECT',
+        properties: {
+          char: { type: 'STRING' },
+          hex: { type: 'STRING', description: '#rrggbb' },
+        },
+        required: ['char', 'hex'],
+      },
+    },
+  },
+  required: ['palette'],
+} as const
 
 /** Gemini의 responseSchema는 동적 키를 표현할 수 없어 팔레트를 배열로 받는다. */
 const RESPONSE_SCHEMA = {
@@ -193,6 +237,67 @@ export function toSpecSafe(doc: PixelDoc): { spec: PixelSpec; reduced: boolean }
   }
 }
 
+const RECOLOR_CHARS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
+/** 모델에게 보여 줄 색 개수 상한. 많아지면 매핑이 흐트러진다. */
+const MAX_RECOLOR_COLORS = 40
+
+export interface RecolorPlan {
+  chars: string[]
+  colors: RGBA[]
+  hexes: string[]
+}
+
+/** 문서에서 많이 쓰인 색부터 뽑아 모델에게 보여 줄 목록을 만든다. */
+export function planRecolor(doc: PixelDoc): RecolorPlan {
+  const used = usedColors(doc).slice(0, MAX_RECOLOR_COLORS)
+  const chars: string[] = []
+  const colors: RGBA[] = []
+  const hexes: string[] = []
+  used.forEach((u, i) => {
+    const rgba = parseHex(u.hex)
+    if (!rgba) return
+    chars.push(RECOLOR_CHARS[i])
+    colors.push(rgba)
+    hexes.push(u.hex)
+  })
+  return { chars, colors, hexes }
+}
+
+/**
+ * 모델이 돌려준 팔레트를 매핑으로 바꾼다.
+ *
+ * 못 알아본 char나 형식이 틀린 hex는 조용히 버리지 않고 원래 색으로 둔다.
+ * 빠뜨린 색을 투명이나 검정으로 만들면 그림이 망가진다.
+ */
+export function buildRecolorMappings(
+  plan: RecolorPlan,
+  raw: Array<{ char?: string; hex?: string }>,
+): { mappings: Array<{ from: RGBA; to: RGBA }>; changed: number; skipped: number } {
+  const byChar = new Map<string, string>()
+  for (const entry of raw) {
+    const char = (entry.char ?? '').trim()
+    const hex = (entry.hex ?? '').trim()
+    if (char.length !== 1 || !/^#[0-9a-fA-F]{6}$/.test(hex)) continue
+    byChar.set(char, hex)
+  }
+
+  const mappings: Array<{ from: RGBA; to: RGBA }> = []
+  let changed = 0
+  let skipped = 0
+  plan.chars.forEach((char, i) => {
+    const hex = byChar.get(char)
+    const next = hex ? parseHex(hex) : null
+    if (!next) {
+      skipped++
+      return
+    }
+    if (hex!.toLowerCase() === plan.hexes[i].toLowerCase()) return
+    mappings.push({ from: plan.colors[i], to: next })
+    changed++
+  })
+  return { mappings, changed, skipped }
+}
+
 /** 클라이언트가 보낸 값이므로 모양만 확인하고, 자세한 검증은 fromSpec에 맡긴다. */
 function isSpecLike(v: unknown): v is PixelSpec {
   if (typeof v !== 'object' || v === null) return false
@@ -281,7 +386,63 @@ function describeBase(base: PixelSpec): string {
   ].join('\n')
 }
 
-export type GenerateMode = 'create' | 'edit' | 'add'
+export type GenerateMode = 'create' | 'edit' | 'add' | 'recolor'
+
+/** 팔레트만 받아온다. 그리드를 요청하지 않으므로 모양이 바뀔 수 없다. */
+async function callGeminiPalette(
+  apiKey: string,
+  model: string,
+  prompt: string,
+  plan: RecolorPlan,
+  preview: PixelSpec,
+): Promise<Array<{ char?: string; hex?: string }>> {
+  const list = plan.chars.map((c, i) => `  "${c}": "${plan.hexes[i]}"`).join('\n')
+  const userText = [
+    '현재 팔레트:',
+    list,
+    '',
+    // 어느 색이 몸통이고 어느 색이 디테일인지 알아야 배합을 제대로 정한다.
+    `참고용 그림 (${preview.w}x${preview.h}, 위 char로 표기):`,
+    ...preview.rows,
+    '',
+    `요청: ${prompt}`,
+    '위 char를 전부 그대로, hex만 새 색으로 돌려주세요.',
+  ].join('\n')
+
+  const res = await fetch(`${ENDPOINT}/${encodeURIComponent(model)}:generateContent`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: RECOLOR_INSTRUCTION }] },
+      contents: [{ role: 'user', parts: [{ text: userText }] }],
+      generationConfig: {
+        responseMimeType: 'application/json',
+        responseSchema: PALETTE_ONLY_SCHEMA,
+        temperature: 0.7,
+      },
+    }),
+  })
+
+  const bodyText = await res.text()
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`
+    try {
+      const parsed = JSON.parse(bodyText) as { error?: { message?: string; status?: string } }
+      if (parsed.error?.message) detail = `${parsed.error.status ?? res.status}: ${parsed.error.message}`
+    } catch {
+      detail = `HTTP ${res.status} ${bodyText.slice(0, 200)}`
+    }
+    throw new Error(`Gemini 호출 실패 — ${detail}`)
+  }
+
+  const payload = JSON.parse(bodyText) as {
+    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>
+  }
+  const text = payload.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('') ?? ''
+  if (text.trim().length === 0) throw new Error('모델이 빈 응답을 반환했습니다.')
+  const out = JSON.parse(text) as { palette?: Array<{ char?: string; hex?: string }> }
+  return out.palette ?? []
+}
 
 async function callGemini(
   apiKey: string,
@@ -416,7 +577,9 @@ export function createGeminiHandler(config: ServerConfig): ApiHandler {
       const { genW, genH, factor } = planGeneration(w, h)
 
       const mode: GenerateMode =
-        parsed.mode === 'edit' || parsed.mode === 'add' ? parsed.mode : 'create'
+        parsed.mode === 'edit' || parsed.mode === 'add' || parsed.mode === 'recolor'
+          ? parsed.mode
+          : 'create'
 
       // 수정/추가 모드: 기존 그림도 같은 크기로 줄여서 보낸다.
       // 256px 그리드를 그대로 보내면 65,536자라 모델이 읽지도 못한다.
@@ -434,7 +597,42 @@ export function createGeminiHandler(config: ServerConfig): ApiHandler {
         }
       }
       if (mode !== 'create' && base === undefined) {
-        send(res, 400, { error: `${mode === 'add' ? '추가' : '수정'} 모드에는 기존 그림이 필요합니다.` })
+        send(res, 400, { error: '이 모드에는 기존 그림이 필요합니다.' })
+        return true
+      }
+
+      // 색만 바꾸는 모드는 그리드를 아예 요청하지 않는다.
+      // 모델에게 그림을 그리게 하면 "색만 바꿔줘"라고 해도 형태가 같이 바뀐다.
+      if (mode === 'recolor' && baseDoc !== undefined && base !== undefined) {
+        const plan = planRecolor(baseDoc)
+        if (plan.chars.length === 0) {
+          send(res, 400, { error: '바꿀 색이 없습니다.' })
+          return true
+        }
+        const rawPalette = await callGeminiPalette(
+          config.apiKey,
+          config.model,
+          prompt,
+          plan,
+          base,
+        )
+        const { mappings, changed, skipped } = buildRecolorMappings(plan, rawPalette)
+        if (changed === 0) {
+          send(res, 502, { error: '모델이 바꿀 색을 돌려주지 않았습니다. 요청을 더 구체적으로 적어보세요.' })
+          return true
+        }
+
+        const recolored = replaceColors(baseDoc, mappings, 0)
+        const safe = toSpecSafe(recolored.doc)
+        const notes = [`${changed}개 색을 바꿨습니다. 모양은 그대로입니다.`]
+        if (skipped > 0) notes.push(`${skipped}개 색은 모델이 빠뜨려 원래 값을 유지했습니다.`)
+        if (safe.reduced) notes.push('색이 너무 많아 56색으로 줄였습니다.')
+
+        send(res, 200, {
+          spec: safe.spec,
+          warnings: notes,
+          model: config.model,
+        } satisfies GenerateResponse)
         return true
       }
 
