@@ -6,8 +6,9 @@ import { usedColors } from '../src/core/codec'
 import { parseHex } from '../src/core/color'
 import type { RGBA } from '../src/core/color'
 import { replaceColors } from '../src/core/recolor'
-import { getPixel, setPixel } from '../src/core/doc'
 import type { PixelDoc } from '../src/core/doc'
+import type { CompositeMode, CompositeResult } from '../src/core/compose'
+import { composite } from '../src/core/compose'
 import type { ServerConfig } from './env'
 import { generateGrid, generatePalette } from './llm'
 import type { ApiHandler } from './http'
@@ -162,58 +163,19 @@ export const MAX_MODEL_SIZE = 32
 /** 캔버스 상한. 이 크기까지는 확대로 만들어 준다. */
 export const MAX_CANVAS = 256
 
-export type OverlayMode = 'front' | 'behind'
-
-export interface OverlayResult {
-  doc: PixelDoc
-  /** 빈 자리에 새로 그려진 픽셀 수. */
-  added: number
-  /** 원본을 덮은 픽셀 수. behind 모드에서는 항상 0. */
-  covered: number
-  /** 원본의 불투명 픽셀 수. 덮은 비율을 판단하는 기준. */
-  baseOpaque: number
-}
-
 /**
- * 원본에 덧붙인 결과를 만든다.
+ * 덧붙이기 합성. 계산은 core/compose 가 한다.
  *
- * - behind : 원본이 있는 자리는 무조건 원본. 100% 보존되지만 새 요소가 뒤에
- *            끼워진 것처럼 보인다. 모자가 머리를 덮을 수 없다.
- * - front  : 모델이 그린 자리만 덮는다. 모델은 덧붙일 요소만 그리고 나머지를
- *            투명으로 두도록 지시받으므로, 원본은 그 요소가 가리는 부분만 바뀐다.
- *
- * front 도 통째로 다시 그리는 것과는 다르다. 모델이 투명으로 둔 자리는
- * 원본이 그대로 남는다. 다만 모델이 전체를 칠해 보내면 사실상 덮어쓰기가 되므로,
- * 호출자가 covered 비율을 보고 판단해야 한다.
+ * 캔버스 붙여넣기와 같은 로직이므로 여기에 따로 두면 한쪽만 고쳐진다.
  */
+export type OverlayMode = CompositeMode
+
 export function overlay(
   base: PixelDoc,
   addition: PixelDoc,
   mode: OverlayMode = 'behind',
-): OverlayResult {
-  const doc: PixelDoc = { w: base.w, h: base.h, data: new Uint8ClampedArray(base.data) }
-  let added = 0
-  let covered = 0
-  let baseOpaque = 0
-
-  for (let y = 0; y < base.h; y++) {
-    for (let x = 0; x < base.w; x++) {
-      const under = getPixel(base, x, y)
-      if (under[3] !== 0) baseOpaque++
-
-      const over = getPixel(addition, x, y)
-      if (over[3] === 0) continue
-
-      if (under[3] === 0) {
-        setPixel(doc, x, y, over)
-        added++
-      } else if (mode === 'front') {
-        setPixel(doc, x, y, over)
-        covered++
-      }
-    }
-  }
-  return { doc, added, covered, baseOpaque }
+): CompositeResult {
+  return composite(base, addition, { mode, x: 0, y: 0 })
 }
 
 /**

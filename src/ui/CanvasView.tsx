@@ -7,6 +7,8 @@ import { getPixel } from '../core/doc'
 import { DocRenderer, screenToPixel } from '../core/render'
 import type { StampOptions, ToolId } from '../core/tools'
 import { drawLine, drawRect, floodFill, stamp, stampCells } from '../core/tools'
+import type { Rect } from '../core/selection'
+import { clampRect, containsPoint, moveRegion, rectFromPoints } from '../core/selection'
 
 export interface CanvasViewProps {
   doc: PixelDoc
@@ -23,6 +25,8 @@ export interface CanvasViewProps {
   onHover: (pos: { x: number; y: number } | null) => void
   /** 매 페인트 직후 호출. 실제 크기 미리보기를 같은 경로로 갱신한다. */
   onPaint?: () => void
+  selection: Rect | null
+  onSelectionChange: (rect: Rect | null) => void
 }
 
 const SHAPE_TOOLS: ReadonlySet<ToolId> = new Set<ToolId>(['line', 'rect', 'rectFill'])
@@ -40,6 +44,8 @@ export function CanvasView(props: CanvasViewProps) {
     onPickColor,
     onHover,
     onPaint,
+    selection,
+    onSelectionChange,
   } = props
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -55,6 +61,12 @@ export function CanvasView(props: CanvasViewProps) {
    * 그리기와 같은 경로(직접 페인트)로 처리한다.
    */
   const hover = useRef<{ x: number; y: number } | null>(null)
+  /** 선택 드래그의 시작점. */
+  const selectAnchor = useRef<{ x: number; y: number } | null>(null)
+  /** 선택 영역을 끌어 옮기는 중일 때의 시작 정보. */
+  const dragging = useRef<{ start: { x: number; y: number }; rect: Rect; base: PixelDoc } | null>(
+    null,
+  )
 
   /**
    * 스트로크 중에는 React를 거치지 않고 직접 그린다.
@@ -72,10 +84,10 @@ export function CanvasView(props: CanvasViewProps) {
           ? stampCells(doc, hover.current.x, hover.current.y, stampOptions)
           : [hover.current]
 
-    rendererRef.current.draw(canvas, doc, { zoom, showGrid, hover: cursor })
+    rendererRef.current.draw(canvas, doc, { zoom, showGrid, hover: cursor, selection })
     // 미리보기도 같은 경로로 갱신해야 스트로크 중에 한 박자 늦지 않는다.
     onPaint?.()
-  }, [doc, zoom, showGrid, onPaint, tool, stampOptions])
+  }, [doc, zoom, showGrid, onPaint, tool, stampOptions, selection])
 
   useEffect(() => {
     paint()
@@ -134,6 +146,24 @@ export function CanvasView(props: CanvasViewProps) {
       return
     }
 
+    if (tool === 'select') {
+      e.currentTarget.setPointerCapture(e.pointerId)
+      // 선택 안을 누르면 옮기기, 밖을 누르면 새로 선택한다.
+      if (selection !== null && containsPoint(selection, p.x, p.y)) {
+        onBeforeStroke()
+        dragging.current = {
+          start: p,
+          rect: selection,
+          // 옮기는 동안 매 프레임 원본에서 다시 계산해야 잔상이 남지 않는다.
+          base: { w: doc.w, h: doc.h, data: new Uint8ClampedArray(doc.data) },
+        }
+      } else {
+        selectAnchor.current = p
+        onSelectionChange({ x: p.x, y: p.y, w: 1, h: 1 })
+      }
+      return
+    }
+
     e.currentTarget.setPointerCapture(e.pointerId)
     onBeforeStroke()
 
@@ -169,6 +199,22 @@ export function CanvasView(props: CanvasViewProps) {
     hover.current = p
     onHover(p)
 
+    if (selectAnchor.current !== null && p) {
+      const a = selectAnchor.current
+      onSelectionChange(clampRect(rectFromPoints(a.x, a.y, p.x, p.y), doc))
+      return
+    }
+
+    if (dragging.current !== null && p) {
+      const d = dragging.current
+      const moved = moveRegion(d.base, d.rect, p.x - d.start.x, p.y - d.start.y)
+      // 같은 버퍼를 유지해야 부모가 들고 있는 참조가 어긋나지 않는다.
+      doc.data.set(moved.doc.data)
+      onSelectionChange(moved.rect)
+      paint()
+      return
+    }
+
     if (drawing.current && p) {
       advance(p)
       paint()
@@ -179,6 +225,23 @@ export function CanvasView(props: CanvasViewProps) {
   }
 
   const endStroke = (e: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (selectAnchor.current !== null) {
+      selectAnchor.current = null
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId)
+      }
+      return
+    }
+
+    if (dragging.current !== null) {
+      dragging.current = null
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId)
+      }
+      onDocChanged()
+      return
+    }
+
     if (!drawing.current) return
     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
       e.currentTarget.releasePointerCapture(e.pointerId)

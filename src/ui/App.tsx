@@ -6,6 +6,8 @@ import { usedColors } from '../core/codec'
 import type { PixelDoc } from '../core/doc'
 import { clear, createDoc, MAX_SIZE, MIN_SIZE, resizeDoc } from '../core/doc'
 import { History } from '../core/history'
+import type { Rect } from '../core/selection'
+import { clearRegion, contentRect, copyRegion, pasteAt } from '../core/selection'
 import type { StampOptions, ToolId } from '../core/tools'
 import { defaultStampOptions } from '../core/tools'
 import { AiPanel } from './AiPanel'
@@ -39,6 +41,7 @@ const SHORTCUT_TOOLS: Record<string, ToolId> = {
   r: 'rect',
   f: 'rectFill',
   i: 'picker',
+  s: 'select',
 }
 
 type ModalId = 'ai' | 'generate' | 'import' | 'recolor' | 'workspace' | 'export' | 'size'
@@ -61,6 +64,11 @@ export function App() {
   const [zoom, setZoom] = useState(() => fitZoom(32, 32))
   const [showGrid, setShowGrid] = useState(true)
   const [palette, setPalette] = useState<string[]>([...DEFAULT_PALETTE])
+
+  const [selection, setSelection] = useState<Rect | null>(null)
+  /** 복사한 조각. 리렌더를 유발할 이유가 없어 ref로 둔다. */
+  const clipboard = useRef<PixelDoc | null>(null)
+  const [hasClip, setHasClip] = useState(false)
 
   const [modal, setModal] = useState<ModalId | null>(null)
   const [sizeW, setSizeW] = useState('32')
@@ -146,6 +154,49 @@ export function App() {
     },
     [doc],
   )
+
+  const copySelection = useCallback(() => {
+    if (selection === null) return
+    clipboard.current = copyRegion(doc, selection)
+    setHasClip(true)
+  }, [doc, selection])
+
+  const deleteSelection = useCallback(() => {
+    if (selection === null) return
+    history.current.commit(doc)
+    clearRegion(doc, selection)
+    syncDoc()
+    bumpHistory()
+  }, [doc, selection, syncDoc])
+
+  const cutSelection = useCallback(() => {
+    copySelection()
+    deleteSelection()
+  }, [copySelection, deleteSelection])
+
+  const pasteClipboard = useCallback(() => {
+    const clip = clipboard.current
+    if (clip === null) return
+    // 선택이 있으면 그 자리에, 없으면 가운데에 붙인다.
+    const x = selection?.x ?? Math.max(0, Math.round((doc.w - clip.w) / 2))
+    const y = selection?.y ?? Math.max(0, Math.round((doc.h - clip.h) / 2))
+    const out = pasteAt(doc, clip, x, y, 'front')
+    replaceDoc(out.doc)
+    setSelection(out.rect)
+  }, [doc, selection, replaceDoc])
+
+  const selectAll = useCallback(() => {
+    setSelection({ x: 0, y: 0, w: doc.w, h: doc.h })
+  }, [doc.w, doc.h])
+
+  const selectContent = useCallback(() => {
+    setSelection(contentRect(doc))
+  }, [doc])
+
+  // 캔버스 크기가 바뀌면 이전 선택은 의미가 없다.
+  useEffect(() => {
+    setSelection(null)
+  }, [doc.w, doc.h])
 
   /**
    * 스테이지 크기를 관측해 확대율을 맞춘다.
@@ -297,7 +348,44 @@ export function App() {
         redo()
         return
       }
+      if (e.ctrlKey || e.metaKey) {
+        if (key === 'c') {
+          e.preventDefault()
+          copySelection()
+          return
+        }
+        if (key === 'x') {
+          e.preventDefault()
+          cutSelection()
+          return
+        }
+        if (key === 'v') {
+          e.preventDefault()
+          pasteClipboard()
+          return
+        }
+        if (key === 'a') {
+          e.preventDefault()
+          selectAll()
+          return
+        }
+      }
       if (e.ctrlKey || e.metaKey || e.altKey) return
+
+      if (key === 'escape') {
+        setSelection(null)
+        return
+      }
+      // 그려진 부분만 빠르게 잡는다. 스프라이트를 통째로 옮길 때 편하다.
+      if (key === 'w') {
+        selectContent()
+        return
+      }
+      if (key === 'delete' || key === 'backspace') {
+        e.preventDefault()
+        deleteSelection()
+        return
+      }
 
       const t = SHORTCUT_TOOLS[key]
       if (t) {
@@ -316,7 +404,7 @@ export function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [undo, redo, modal])
+  }, [undo, redo, modal, copySelection, cutSelection, pasteClipboard, selectAll, deleteSelection, selectContent])
 
   /** 가져오기 모달이 열린 뒤에 대기 중인 파일을 넘긴다. */
   const handleImportReady = useCallback((fn: ((file: File) => void) | null) => {
@@ -355,6 +443,11 @@ export function App() {
           palette={palette}
           setPalette={setPalette}
           used={used}
+          hasSelection={selection !== null}
+          hasClipboard={hasClip}
+          onCopy={copySelection}
+          onCut={cutSelection}
+          onPaste={pasteClipboard}
         />
 
         <main
@@ -395,6 +488,8 @@ export function App() {
               onPickColor={setColor}
               onHover={handleHover}
               onPaint={handlePaint}
+              selection={selection}
+              onSelectionChange={setSelection}
             />
           </div>
 

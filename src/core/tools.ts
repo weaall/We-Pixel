@@ -3,7 +3,15 @@ import { equals, TRANSPARENT } from './color'
 import type { PixelDoc } from './doc'
 import { getPixel, inBounds, setPixel } from './doc'
 
-export type ToolId = 'pen' | 'eraser' | 'line' | 'rect' | 'rectFill' | 'fill' | 'picker'
+export type ToolId =
+  | 'pen'
+  | 'eraser'
+  | 'line'
+  | 'rect'
+  | 'rectFill'
+  | 'fill'
+  | 'picker'
+  | 'select'
 
 export interface StampOptions {
   /** 정사각 브러시 한 변의 길이(픽셀). */

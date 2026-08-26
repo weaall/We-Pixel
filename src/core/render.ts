@@ -7,6 +7,8 @@ export interface RenderOptions {
   gridMinZoom?: number
   /** 커서가 덮는 칸들. 도구와 브러시 크기, 대칭에 따라 여러 칸이 된다. */
   hover?: ReadonlyArray<{ x: number; y: number }> | null
+  /** 선택 영역. 점선으로 표시한다. */
+  selection?: { x: number; y: number; w: number; h: number } | null
 }
 
 const CHECKER_A = '#2a2a33'
@@ -102,6 +104,10 @@ export class DocRenderer {
     if (opts.hover && opts.hover.length > 0) {
       drawHover(ctx, opts.hover, opts.zoom)
     }
+
+    if (opts.selection) {
+      drawSelection(ctx, opts.selection, opts.zoom)
+    }
   }
 }
 
@@ -154,4 +160,35 @@ export function screenToPixel(
     x: Math.floor(nx * doc.w),
     y: Math.floor(ny * doc.h),
   }
+}
+
+/**
+ * 선택 영역 테두리.
+ *
+ * 흰 점선과 검은 점선을 어긋나게 겹친다. 한 색만 쓰면 비슷한 밝기의 그림 위에서
+ * 테두리가 사라진다 — 커서 표시와 같은 이유다.
+ */
+function drawSelection(
+  ctx: CanvasRenderingContext2D,
+  rect: { x: number; y: number; w: number; h: number },
+  zoom: number,
+): void {
+  const x = rect.x * zoom + 0.5
+  const y = rect.y * zoom + 0.5
+  const w = rect.w * zoom - 1
+  const h = rect.h * zoom - 1
+
+  ctx.save()
+  ctx.lineWidth = 1
+
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)'
+  ctx.setLineDash([4, 4])
+  ctx.lineDashOffset = 0
+  ctx.strokeRect(x, y, w, h)
+
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)'
+  ctx.lineDashOffset = 4
+  ctx.strokeRect(x, y, w, h)
+
+  ctx.restore()
 }

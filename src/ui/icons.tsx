@@ -211,3 +211,44 @@ export const IconRecolor = ({ size }: IconProps) =>
     </>,
     size,
   )
+
+export const IconSelect = ({ size }: IconProps) =>
+  svg(
+    <>
+      <path d="M3 8V5a2 2 0 0 1 2-2h3" strokeDasharray="0" />
+      <path d="M16 3h3a2 2 0 0 1 2 2v3" />
+      <path d="M21 16v3a2 2 0 0 1-2 2h-3" />
+      <path d="M8 21H5a2 2 0 0 1-2-2v-3" />
+      <path d="M12 3v0M3 12h0M12 21v0M21 12h0" />
+    </>,
+    size,
+  )
+
+export const IconCopy = ({ size }: IconProps) =>
+  svg(
+    <>
+      <rect x="9" y="9" width="12" height="12" rx="2" />
+      <path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" />
+    </>,
+    size,
+  )
+
+export const IconCut = ({ size }: IconProps) =>
+  svg(
+    <>
+      <circle cx="6" cy="18" r="3" />
+      <circle cx="18" cy="18" r="3" />
+      <path d="M8.1 15.9L19 4M15.9 15.9L5 4" />
+    </>,
+    size,
+  )
+
+export const IconPaste = ({ size }: IconProps) =>
+  svg(
+    <>
+      <path d="M9 4H6a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-3" />
+      <rect x="9" y="3" width="6" height="3" rx="1" />
+      <rect x="13" y="11" width="8" height="8" rx="1" />
+    </>,
+    size,
+  )

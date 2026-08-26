@@ -6,6 +6,8 @@ import type { StampOptions, ToolId } from '../core/tools'
 import type { IconProps } from './icons'
 import {
   IconBrush,
+  IconCopy,
+  IconCut,
   IconEraser,
   IconFill,
   IconGrid,
@@ -13,10 +15,12 @@ import {
   IconMirrorX,
   IconMirrorY,
   IconPen,
+  IconPaste,
   IconPicker,
   IconRect,
   IconRectFill,
   IconRedo,
+  IconSelect,
   IconTrash,
   IconUndo,
 } from './icons'
@@ -34,6 +38,7 @@ const TOOLS: ReadonlyArray<{
   { id: 'rect', label: '사각', key: 'R', icon: IconRect },
   { id: 'rectFill', label: '사각 칠', key: 'F', icon: IconRectFill },
   { id: 'picker', label: '스포이드', key: 'I', icon: IconPicker },
+  { id: 'select', label: '선택', key: 'S', icon: IconSelect },
 ]
 
 export interface LeftRailProps {
@@ -53,6 +58,11 @@ export interface LeftRailProps {
   palette: string[]
   setPalette: (p: string[]) => void
   used: ReadonlyArray<{ hex: string; count: number }>
+  hasSelection: boolean
+  hasClipboard: boolean
+  onCopy: () => void
+  onCut: () => void
+  onPaste: () => void
 }
 
 export function LeftRail(props: LeftRailProps) {
@@ -119,6 +129,30 @@ export function LeftRail(props: LeftRailProps) {
       >
         <ColorPopover {...props} />
       </Popover>
+
+      <div className="rail-divider" />
+
+      <RailButton
+        title="복사 (Ctrl+C)"
+        onClick={props.onCopy}
+        disabled={!props.hasSelection}
+      >
+        <IconCopy />
+      </RailButton>
+      <RailButton
+        title="잘라내기 (Ctrl+X)"
+        onClick={props.onCut}
+        disabled={!props.hasSelection}
+      >
+        <IconCut />
+      </RailButton>
+      <RailButton
+        title="붙여넣기 (Ctrl+V)"
+        onClick={props.onPaste}
+        disabled={!props.hasClipboard}
+      >
+        <IconPaste />
+      </RailButton>
 
       <div className="rail-divider" />
 

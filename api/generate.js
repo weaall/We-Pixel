@@ -1196,6 +1196,38 @@ function matchesAt(doc, i, from, tolerance) {
   return dr * dr + dg * dg + db * db <= tolerance * tolerance;
 }
 
+// src/core/compose.ts
+function composite(base, addition, options) {
+  const doc = { w: base.w, h: base.h, data: new Uint8ClampedArray(base.data) };
+  let added = 0;
+  let covered = 0;
+  let baseOpaque = 0;
+  for (let y = 0; y < base.h; y++) {
+    for (let x = 0; x < base.w; x++) {
+      if (getPixel(base, x, y)[3] !== 0) baseOpaque++;
+    }
+  }
+  for (let ay = 0; ay < addition.h; ay++) {
+    const y = ay + options.y;
+    if (y < 0 || y >= base.h) continue;
+    for (let ax = 0; ax < addition.w; ax++) {
+      const x = ax + options.x;
+      if (x < 0 || x >= base.w) continue;
+      const over = getPixel(addition, ax, ay);
+      if (over[3] === 0) continue;
+      const under = getPixel(base, x, y);
+      if (under[3] === 0) {
+        setPixel(doc, x, y, over);
+        added++;
+      } else if (options.mode === "front") {
+        setPixel(doc, x, y, over);
+        covered++;
+      }
+    }
+  }
+  return { doc, added, covered, baseOpaque };
+}
+
 // node_modules/@ai-sdk/provider/dist/index.js
 var marker = "vercel.ai.error";
 var symbol = Symbol.for(marker);
@@ -35697,26 +35729,7 @@ function upscaleRows(rows, factor) {
 var MAX_MODEL_SIZE = 32;
 var MAX_CANVAS = 256;
 function overlay(base, addition, mode = "behind") {
-  const doc = { w: base.w, h: base.h, data: new Uint8ClampedArray(base.data) };
-  let added = 0;
-  let covered = 0;
-  let baseOpaque = 0;
-  for (let y = 0; y < base.h; y++) {
-    for (let x = 0; x < base.w; x++) {
-      const under = getPixel(base, x, y);
-      if (under[3] !== 0) baseOpaque++;
-      const over = getPixel(addition, x, y);
-      if (over[3] === 0) continue;
-      if (under[3] === 0) {
-        setPixel(doc, x, y, over);
-        added++;
-      } else if (mode === "front") {
-        setPixel(doc, x, y, over);
-        covered++;
-      }
-    }
-  }
-  return { doc, added, covered, baseOpaque };
+  return composite(base, addition, { mode, x: 0, y: 0 });
 }
 var REDRAW_RATIO = 0.6;
 function toSpecSafe(doc) {
