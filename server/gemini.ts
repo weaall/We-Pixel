@@ -1,5 +1,6 @@
 import type { PixelSpec } from '../src/core/codec'
-import { TRANSPARENT_CHAR } from '../src/core/codec'
+import { fromSpec, toSpec, TRANSPARENT_CHAR } from '../src/core/codec'
+import { resample } from '../src/core/resample'
 import type { ServerConfig } from './env'
 import type { ApiHandler } from './http'
 import { readBody, send } from './http'
@@ -27,6 +28,25 @@ const SYSTEM_INSTRUCTION = [
   '- 배경은 반드시 "." (투명)으로 둡니다. 배경색을 칠하지 않습니다.',
   '- 작은 크기에서 형태가 읽히는 것이 디테일보다 중요합니다. 실루엣을 먼저 잡으세요.',
   '- 좌우 대칭이 어울리는 대상(생물, 정면 얼굴)은 대칭으로 그립니다.',
+  '',
+  'palette의 char는 반드시 한 글자이며, "." 은 투명으로 예약되어 있으니 palette에 넣지 마세요.',
+  'rows는 정확히 h개의 문자열이고, 각 문자열은 정확히 w글자여야 합니다. 글자 수를 세면서 작성하세요.',
+].join('\n')
+
+/**
+ * 수정 모드 지시.
+ *
+ * 새로 그릴 때와 요구가 다르다. 요청하지 않은 부분까지 다시 그리면
+ * "모자만 씌워줘"가 전혀 다른 그림으로 돌아온다.
+ */
+const EDIT_INSTRUCTION = [
+  '당신은 픽셀 아트 도터입니다. 주어진 픽셀 그리드를 요청대로 수정합니다.',
+  '',
+  '규칙:',
+  '- 요청과 무관한 부분은 원본 그대로 두세요. 전체를 다시 그리지 마세요.',
+  '- 기존 팔레트 문자를 그대로 재사용하세요. 새 색이 꼭 필요할 때만 추가합니다.',
+  '- 원본의 실루엣과 자세를 유지하세요. 요청이 그것을 바꾸라는 것이 아니라면.',
+  '- 명암 방향은 원본을 따르세요.',
   '',
   'palette의 char는 반드시 한 글자이며, "." 은 투명으로 예약되어 있으니 palette에 넣지 마세요.',
   'rows는 정확히 h개의 문자열이고, 각 문자열은 정확히 w글자여야 합니다. 글자 수를 세면서 작성하세요.',
@@ -118,6 +138,19 @@ export const MAX_MODEL_SIZE = 32
 /** 캔버스 상한. 이 크기까지는 확대로 만들어 준다. */
 export const MAX_CANVAS = 256
 
+/** 클라이언트가 보낸 값이므로 모양만 확인하고, 자세한 검증은 fromSpec에 맡긴다. */
+function isSpecLike(v: unknown): v is PixelSpec {
+  if (typeof v !== 'object' || v === null) return false
+  const o = v as Record<string, unknown>
+  return (
+    typeof o.w === 'number' &&
+    typeof o.h === 'number' &&
+    typeof o.palette === 'object' &&
+    o.palette !== null &&
+    Array.isArray(o.rows)
+  )
+}
+
 export function planGeneration(
   w: number,
   h: number,
@@ -176,13 +209,41 @@ export function repairSpec(raw: RawResult, w: number, h: number): GenerateRespon
   return { w, h, palette, rows, warnings }
 }
 
+/** 기존 그림을 모델이 읽을 수 있는 형태로 적는다. */
+function describeBase(base: PixelSpec): string {
+  const palette = Object.entries(base.palette)
+    .filter(([char]) => char !== TRANSPARENT_CHAR)
+    .map(([char, hex]) => `  "${char}": "${hex}"`)
+    .join('\n')
+
+  return [
+    `현재 그림 (${base.w}x${base.h}):`,
+    'palette:',
+    palette,
+    '  "." : 투명',
+    'rows:',
+    ...base.rows,
+  ].join('\n')
+}
+
 async function callGemini(
   apiKey: string,
   model: string,
   prompt: string,
   w: number,
   h: number,
+  base?: PixelSpec,
 ): Promise<RawResult> {
+  const userText =
+    base === undefined
+      ? `${w}x${h} 픽셀 아트로 그려주세요: ${prompt}`
+      : [
+          describeBase(base),
+          '',
+          `위 그림을 ${w}x${h} 크기로 수정해주세요: ${prompt}`,
+          '요청과 무관한 부분은 그대로 두세요.',
+        ].join('\n')
+
   const res = await fetch(`${ENDPOINT}/${encodeURIComponent(model)}:generateContent`, {
     method: 'POST',
     headers: {
@@ -191,17 +252,15 @@ async function callGemini(
       'x-goog-api-key': apiKey,
     },
     body: JSON.stringify({
-      systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
-      contents: [
-        {
-          role: 'user',
-          parts: [{ text: `${w}x${h} 픽셀 아트로 그려주세요: ${prompt}` }],
-        },
-      ],
+      systemInstruction: {
+        parts: [{ text: base === undefined ? SYSTEM_INSTRUCTION : EDIT_INSTRUCTION }],
+      },
+      contents: [{ role: 'user', parts: [{ text: userText }] }],
       generationConfig: {
         responseMimeType: 'application/json',
         responseSchema: RESPONSE_SCHEMA,
-        temperature: 1,
+        // 수정은 원본을 지켜야 하므로 덜 흔들리게 한다.
+        temperature: base === undefined ? 1 : 0.6,
       },
     }),
   })
@@ -256,10 +315,12 @@ export function createGeminiHandler(config: ServerConfig): ApiHandler {
     }
 
     try {
-      const parsed = JSON.parse(await readBody(req, 64 * 1024)) as {
+      // 수정 모드는 기존 그림을 함께 보내므로 본문이 커진다.
+      const parsed = JSON.parse(await readBody(req, 512 * 1024)) as {
         prompt?: unknown
         w?: unknown
         h?: unknown
+        base?: unknown
       }
       const prompt = typeof parsed.prompt === 'string' ? parsed.prompt.trim() : ''
       const w = Math.min(MAX_CANVAS, Math.max(8, Number(parsed.w) || 32))
@@ -278,7 +339,23 @@ export function createGeminiHandler(config: ServerConfig): ApiHandler {
 
       // 큰 캔버스는 모델에게 직접 시키지 않는다. 작게 그리게 하고 정수배로 키운다.
       const { genW, genH, factor } = planGeneration(w, h)
-      const raw = await callGemini(config.apiKey, config.model, prompt, genW, genH)
+
+      // 수정 모드: 기존 그림도 같은 크기로 줄여서 보낸다.
+      // 256px 그리드를 그대로 보내면 65,536자라 모델이 읽지도 못한다.
+      let base: PixelSpec | undefined
+      if (isSpecLike(parsed.base)) {
+        try {
+          const doc = fromSpec(parsed.base)
+          base = toSpec(resample(doc, genW, genH, 'nearest'))
+        } catch (err) {
+          send(res, 400, {
+            error: `수정할 그림을 읽을 수 없습니다: ${err instanceof Error ? err.message : String(err)}`,
+          })
+          return true
+        }
+      }
+
+      const raw = await callGemini(config.apiKey, config.model, prompt, genW, genH, base)
       const repaired = repairSpec(raw, genW, genH)
       const warnings = [...repaired.warnings]
 

@@ -430,7 +430,7 @@ export function App() {
 
       {modal === 'ai' && (
         <Modal title="AI 생성" onClose={() => setModal(null)}>
-          <AiPanel width={doc.w} height={doc.h} onGenerate={replaceDoc} />
+          <AiPanel width={doc.w} height={doc.h} doc={doc} onGenerate={replaceDoc} />
         </Modal>
       )}
       {modal === 'generate' && (
