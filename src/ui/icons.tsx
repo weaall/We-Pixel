@@ -201,3 +201,13 @@ export const IconPalette = ({ size }: IconProps) =>
     </>,
     size,
   )
+
+export const IconRecolor = ({ size }: IconProps) =>
+  svg(
+    <>
+      <path d="M8 4l5 5-6 6-5-5z" />
+      <path d="M6 6l7 7" />
+      <path d="M18 13c1.4 2 2 3.3 2 4.3a2 2 0 1 1-4 0c0-1 .6-2.3 2-4.3z" fill="currentColor" />
+    </>,
+    size,
+  )

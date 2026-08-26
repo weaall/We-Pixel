@@ -18,6 +18,7 @@ import {
   IconFolder,
   IconImage,
   IconPackage,
+  IconRecolor,
   IconResize,
   IconSparkle,
 } from './icons'
@@ -26,6 +27,7 @@ import { LeftRail } from './LeftRail'
 import { Modal } from './Modal'
 import { DEFAULT_PALETTE } from './palette'
 import { PreviewOverlay } from './PreviewOverlay'
+import { RecolorPanel } from './RecolorPanel'
 import { fitZoom, MAX_ZOOM } from './zoom'
 import { WorkspacePanel } from './WorkspacePanel'
 
@@ -39,12 +41,13 @@ const SHORTCUT_TOOLS: Record<string, ToolId> = {
   i: 'picker',
 }
 
-type ModalId = 'ai' | 'generate' | 'import' | 'workspace' | 'export' | 'size'
+type ModalId = 'ai' | 'generate' | 'import' | 'recolor' | 'workspace' | 'export' | 'size'
 
 const RIGHT_RAIL: ReadonlyArray<{ id: ModalId; label: string; icon: ComponentType<IconProps> }> = [
   { id: 'ai', label: 'AI 생성', icon: IconSparkle },
   { id: 'generate', label: '자동 생성', icon: IconDice },
   { id: 'import', label: '이미지 가져오기', icon: IconImage },
+  { id: 'recolor', label: '색상 교체', icon: IconRecolor },
   { id: 'workspace', label: '디자인 저장소', icon: IconFolder },
   { id: 'export', label: '내보내기', icon: IconPackage },
   { id: 'size', label: '캔버스 크기', icon: IconResize },
@@ -365,6 +368,19 @@ export function App() {
               setModal(null)
             }}
             registerDrop={handleImportReady}
+          />
+        </Modal>
+      )}
+      {modal === 'recolor' && (
+        <Modal title="색상 교체" onClose={() => setModal(null)}>
+          <RecolorPanel
+            doc={doc}
+            current={color}
+            palette={palette}
+            onApply={(next) => {
+              replaceDoc(next)
+              setModal(null)
+            }}
           />
         </Modal>
       )}
