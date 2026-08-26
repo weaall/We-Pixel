@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import type { PixelDoc } from '../core/doc'
+import type { DiceMaterial } from '../core/generate/dice'
+import { defaultDiceOptions, generateDice, randomPips } from '../core/generate/dice'
 import { defaultPatternOptions, generatePattern } from '../core/generate/pattern'
 import { randomSeed, resolveSeed } from '../core/generate/rng'
 import type { SpriteShape } from '../core/generate/sprite'
 import { defaultSpriteOptions, generateSprite } from '../core/generate/sprite'
 
-type Mode = 'sprite' | 'pattern'
+type Mode = 'sprite' | 'pattern' | 'dice'
 
 export interface GeneratePanelProps {
   width: number
@@ -29,10 +31,27 @@ export function GeneratePanel(props: GeneratePanelProps) {
   const [detail, setDetail] = useState(defaultPatternOptions.detail)
   const [seamless, setSeamless] = useState(defaultPatternOptions.seamless)
 
+  const [material, setMaterial] = useState<DiceMaterial>(defaultDiceOptions.material)
+  const [speckle, setSpeckle] = useState(defaultDiceOptions.speckle)
+  /** 눈을 시드에서 뽑을지, 직접 정할지. */
+  const [autoPips, setAutoPips] = useState(true)
+  const [pipTop, setPipTop] = useState(1)
+
   const run = (seedText: string) => {
     const s = resolveSeed(seedText)
     const doc =
-      mode === 'sprite'
+      mode === 'dice'
+        ? generateDice({
+            // 등축 큐브라 정사각 캔버스여야 잘리지 않는다.
+            size: Math.min(props.width, props.height),
+            seed: s,
+            hue,
+            material,
+            speckle,
+            outline: true,
+            pips: autoPips ? randomPips(s) : [pipTop, ((pipTop + 1) % 6) + 1, ((pipTop + 3) % 6) + 1],
+          })
+        : mode === 'sprite'
         ? generateSprite({
             w: props.width,
             h: props.height,
@@ -81,6 +100,12 @@ export function GeneratePanel(props: GeneratePanelProps) {
         >
           무늬 / 타일
         </button>
+        <button
+          className={`grow${mode === 'dice' ? ' active' : ''}`}
+          onClick={() => setMode('dice')}
+        >
+          주사위
+        </button>
       </div>
 
       <div className="row">
@@ -107,7 +132,72 @@ export function GeneratePanel(props: GeneratePanelProps) {
         />
       </div>
 
-      {mode === 'sprite' ? (
+      {mode === 'dice' ? (
+        <>
+          <div className="row">
+            <label>재질</label>
+            <div className="grow seg">
+              {(
+                [
+                  ['stone', '돌'],
+                  ['metal', '금속'],
+                  ['wood', '나무'],
+                  ['gem', '보석'],
+                ] as ReadonlyArray<[DiceMaterial, string]>
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  className={material === value ? 'active' : ''}
+                  onClick={() => setMaterial(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="row">
+            <label>잡티 {speckle.toFixed(2)}</label>
+            <input
+              className="grow"
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={speckle}
+              onChange={(e) => setSpeckle(Number(e.target.value))}
+            />
+          </div>
+
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={autoPips}
+              onChange={(e) => setAutoPips(e.target.checked)}
+            />
+            눈을 시드에서 뽑기
+          </label>
+
+          {!autoPips && (
+            <div className="row" style={{ marginTop: 6 }}>
+              <label>윗면 {pipTop}</label>
+              <input
+                className="grow"
+                type="range"
+                min={1}
+                max={6}
+                value={pipTop}
+                onChange={(e) => setPipTop(Number(e.target.value))}
+              />
+            </div>
+          )}
+
+          <p className="hint">
+            마주보는 면의 합은 7이라, 보이는 세 면은 (1,6) (2,5) (3,4)에서 하나씩입니다.
+            색조와 재질만 바꾸면 같은 형태로 다른 주사위가 나옵니다.
+          </p>
+        </>
+      ) : mode === 'sprite' ? (
         <>
           <div className="row">
             <label>체형</label>

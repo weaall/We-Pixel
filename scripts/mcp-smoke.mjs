@@ -50,7 +50,7 @@ await client.connect(transport)
 try {
   const { tools } = await client.listTools()
   const names = tools.map((t) => t.name).sort()
-  check('도구 등록', names.length === 7, names.join(', '))
+  check('도구 등록', names.length === 8, names.join(', '))
 
   // draw_design — 잘못된 입력이 조용히 통과하지 않아야 한다
   const bad = await client.callTool({
@@ -113,6 +113,12 @@ try {
     arguments: { name: 'SmokeSprite2', w: 32, h: 32, seed: 'goblin' },
   })
   check('시드 재현성', imageOf(g1)?.data === imageOf(g2)?.data)
+
+  const dice = await client.callTool({
+    name: 'generate_dice',
+    arguments: { name: 'SmokeDice', size: 32, seed: 'lucky', material: 'gem', hue: 32 },
+  })
+  check('generate_dice 성공', !dice.isError && !!imageOf(dice), textOf(dice).split('\n')[0])
 
   const pat = await client.callTool({
     name: 'generate_pattern',
