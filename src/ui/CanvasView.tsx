@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react'
-import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from 'react'
+import type { PointerEvent as ReactPointerEvent } from 'react'
 import type { RGBA } from '../core/color'
 import { TRANSPARENT } from '../core/color'
 import type { PixelDoc } from '../core/doc'
@@ -21,7 +21,6 @@ export interface CanvasViewProps {
   onDocChanged: () => void
   onPickColor: (c: RGBA) => void
   onHover: (pos: { x: number; y: number } | null) => void
-  onZoomDelta: (delta: number) => void
   /** 매 페인트 직후 호출. 실제 크기 미리보기를 같은 경로로 갱신한다. */
   onPaint?: () => void
 }
@@ -40,7 +39,6 @@ export function CanvasView(props: CanvasViewProps) {
     onDocChanged,
     onPickColor,
     onHover,
-    onZoomDelta,
     onPaint,
   } = props
 
@@ -181,12 +179,6 @@ export function CanvasView(props: CanvasViewProps) {
     onDocChanged()
   }
 
-  const handleWheel = (e: ReactWheelEvent<HTMLCanvasElement>) => {
-    if (!e.ctrlKey && !e.metaKey) return
-    e.preventDefault()
-    onZoomDelta(e.deltaY < 0 ? 1 : -1)
-  }
-
   return (
     <canvas
       ref={canvasRef}
@@ -195,7 +187,6 @@ export function CanvasView(props: CanvasViewProps) {
       onPointerUp={endStroke}
       onPointerCancel={endStroke}
       onPointerLeave={() => onHover(null)}
-      onWheel={handleWheel}
       onContextMenu={(e) => e.preventDefault()}
     />
   )

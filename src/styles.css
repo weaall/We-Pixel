@@ -51,7 +51,7 @@ textarea {
 
 
 
-.stage canvas {
+.stage-scroll canvas {
   display: block;
   image-rendering: pixelated;
   box-shadow: 0 0 0 1px var(--line), 0 12px 40px rgb(0 0 0 / 45%);
@@ -356,16 +356,28 @@ label.check input {
   font-weight: 600;
 }
 
-/* 스테이지 위에 미리보기를 얹으려면 기준 컨테이너가 필요하다. */
+/**
+ * 스크롤은 안쪽(.stage-scroll)이 맡고, 바깥(.stage)은 오버레이의 기준만 잡는다.
+ *
+ * overflow: auto 컨테이너 안의 absolute 요소는 내용과 함께 스크롤된다.
+ * 미리보기와 상태 표시를 그 안에 두면 확대해서 스크롤할 때 같이 흘러가 버린다.
+ */
 .stage {
   flex: 1;
   min-width: 0;
   position: relative;
+  display: flex;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 30%, #1d1d27 0%, var(--bg) 70%);
+}
+
+.stage-scroll {
+  flex: 1;
+  min-width: 0;
   display: grid;
   place-items: center;
   overflow: auto;
   padding: 20px;
-  background: radial-gradient(circle at 50% 30%, #1d1d27 0%, var(--bg) 70%);
 }
 
 /* 상단 바를 없애고 상태 표시를 캔버스 위로 옮겼다. 세로 공간을 캔버스에 준다. */

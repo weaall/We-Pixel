@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ComponentType } from 'react'
 import type { RGBA } from '../core/color'
 import { parseHex } from '../core/color'
@@ -67,7 +67,7 @@ export function App() {
   const [sizeW, setSizeW] = useState('32')
   const [sizeH, setSizeH] = useState('32')
 
-  const stageRef = useRef<HTMLElement | null>(null)
+  const stageRef = useRef<HTMLDivElement | null>(null)
   const [stageSize, setStageSize] = useState<{ width: number; height: number } | null>(null)
   /** 미리보기의 다시 그리기 함수. 스트로크 중 React를 거치지 않고 부르기 위해 ref로 둔다. */
   const previewRedraw = useRef<(() => void) | null>(null)
@@ -195,6 +195,76 @@ export function App() {
     setZoom(fitZoom(doc.w, doc.h, stageSize))
   }, [stageSize, doc.w, doc.h])
 
+  /**
+   * Ctrl(또는 Cmd) + 휠로 캔버스를 확대/축소한다.
+   *
+   * React의 onWheel은 루트에 passive 리스너로 붙어 preventDefault가 무시된다.
+   * 그대로 두면 캔버스가 확대되면서 브라우저 페이지 확대도 같이 일어난다.
+   * 네이티브 리스너를 passive: false로 직접 붙여야 막을 수 있다.
+   */
+  const zoomAnchor = useRef<{ docX: number; docY: number; clientX: number; clientY: number } | null>(
+    null,
+  )
+  /**
+   * 휠 이벤트는 한 프레임에 여러 개 들어온다. 핸들러가 state의 zoom을 읽으면
+   * 리렌더 전까지 값이 그대로라 여러 번 굴려도 한 단계만 먹는다.
+   * 최신 값을 동기적으로 읽고 쓰기 위해 ref로 따로 들고 간다.
+   */
+  const zoomRef = useRef(zoom)
+  zoomRef.current = zoom
+
+  useEffect(() => {
+    const stage = stageRef.current
+    if (stage === null) return
+
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return
+      e.preventDefault()
+
+      const canvas = stage.querySelector('canvas')
+      if (canvas === null) return
+
+      const current = zoomRef.current
+      // 확대 폭을 현재 배율에 비례시킨다. 항상 1씩이면 40x에서 답답하다.
+      const step = Math.max(1, Math.round(current * 0.15))
+      const next = Math.min(MAX_ZOOM, Math.max(1, current + (e.deltaY < 0 ? step : -step)))
+      if (next === current) return
+
+      // 커서 아래의 문서 좌표를 기억해 두었다가, 확대 후 같은 자리에 오도록 스크롤한다.
+      // 앵커는 이번 프레임의 첫 이벤트 것만 남긴다. 뒤 이벤트는 아직 반영되지 않은
+      // 캔버스 크기를 기준으로 계산하게 되어 좌표가 어긋난다.
+      const rect = canvas.getBoundingClientRect()
+      if (zoomAnchor.current === null) {
+        zoomAnchor.current = {
+          docX: (e.clientX - rect.left) / current,
+          docY: (e.clientY - rect.top) / current,
+          clientX: e.clientX,
+          clientY: e.clientY,
+        }
+      }
+      userSetZoom.current = true
+      zoomRef.current = next
+      setZoom(next)
+    }
+
+    stage.addEventListener('wheel', onWheel, { passive: false })
+    return () => stage.removeEventListener('wheel', onWheel)
+  }, [])
+
+  // 캔버스 크기가 확정된 뒤에 보정해야 한다. useEffect면 한 프레임 늦어 화면이 튄다.
+  useLayoutEffect(() => {
+    const anchor = zoomAnchor.current
+    const stage = stageRef.current
+    if (anchor === null || stage === null) return
+    zoomAnchor.current = null
+
+    const canvas = stage.querySelector('canvas')
+    if (canvas === null) return
+    const rect = canvas.getBoundingClientRect()
+    stage.scrollLeft += rect.left + anchor.docX * zoom - anchor.clientX
+    stage.scrollTop += rect.top + anchor.docY * zoom - anchor.clientY
+  }, [zoom])
+
   // 모달이 열려 있으면 캔버스 단축키가 먹지 않아야 한다.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -278,7 +348,6 @@ export function App() {
 
         <main
           className={`stage${stageDragging ? ' drag-over' : ''}`}
-          ref={stageRef}
           onDragOver={(e) => {
             if (!e.dataTransfer.types.includes('Files')) return
             e.preventDefault()
@@ -302,23 +371,23 @@ export function App() {
             }
           }}
         >
-          <CanvasView
-            doc={doc}
-            zoom={zoom}
-            showGrid={showGrid}
-            tool={tool}
-            color={color}
-            stampOptions={stampOptions}
-            onBeforeStroke={beforeStroke}
-            onDocChanged={syncDoc}
-            onPickColor={setColor}
-            onHover={setHover}
-            onZoomDelta={(d) => {
-              userSetZoom.current = true
-              setZoom((z) => Math.min(MAX_ZOOM, Math.max(1, z + d)))
-            }}
-            onPaint={handlePaint}
-          />
+          <div className="stage-scroll" ref={stageRef}>
+            <CanvasView
+              doc={doc}
+              zoom={zoom}
+              showGrid={showGrid}
+              tool={tool}
+              color={color}
+              stampOptions={stampOptions}
+              onBeforeStroke={beforeStroke}
+              onDocChanged={syncDoc}
+              onPickColor={setColor}
+              onHover={setHover}
+              onPaint={handlePaint}
+            />
+          </div>
+
+          {/* 스크롤 영역 밖에 두어야 화면 모서리에 고정된다. */}
           <PreviewOverlay doc={doc} registerRedraw={registerPreviewRedraw} />
 
           <div className="stage-status">
