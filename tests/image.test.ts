@@ -4,7 +4,7 @@ import { createDoc, getPixel, setPixel } from '../src/core/doc'
 import type { PixelDoc } from '../src/core/doc'
 import { quantize } from '../src/core/quantize'
 import { countMatches, replaceColor, replaceColors } from '../src/core/recolor'
-import { detectPixelScale, resample } from '../src/core/resample'
+import { analyzePixelScale, detectPixelScale, resample, snapToGrid } from '../src/core/resample'
 
 const RED: RGBA = [255, 0, 0, 255]
 const BLUE: RGBA = [0, 0, 255, 255]
@@ -238,5 +238,114 @@ describe('recolor', () => {
       ])
       expect(getPixel(r.doc, 0, 0)).toEqual(BLUE)
     })
+  })
+})
+
+describe('혼합 해상도 감지', () => {
+  /**
+   * 주사위 같은 그림. 몸통은 굵은 블록(scale배)인데 눈은 1픽셀로 잘게 찍혀 있다.
+   * 사용자가 올린 주사위 이미지가 정확히 이 형태였다.
+   */
+  function mixedScaleDice(size: number, scale: number): PixelDoc {
+    const doc = createDoc(size, size)
+    // 몸통: scale 크기 블록으로 체크무늬
+    for (let by = 0; by < size; by += scale) {
+      for (let bx = 0; bx < size; bx += scale) {
+        const tone = ((bx / scale + by / scale) % 2 === 0 ? 90 : 130) as number
+        for (let y = by; y < by + scale; y++) {
+          for (let x = bx; x < bx + scale; x++) setPixel(doc, x, y, [tone, tone, tone, 255])
+        }
+      }
+    }
+    // 눈: 격자를 무시하고 1픽셀로 찍는다
+    for (const [px, py] of [
+      [scale + 1, scale + 1],
+      [scale * 3 + 2, scale + 1],
+      [scale + 1, scale * 3 + 2],
+    ]) {
+      setPixel(doc, px, py, [220, 40, 40, 255])
+    }
+    return doc
+  }
+
+  it('잘게 찍힌 디테일이 섞여도 블록 크기를 찾아낸다', () => {
+    const doc = mixedScaleDice(64, 4)
+    const a = analyzePixelScale(doc)
+    expect(a.scale).toBe(4)
+    expect(a.alignment).toBeGreaterThan(0.9)
+    // 눈 때문에 격자를 벗어난 경계가 남는다 — 혼합 해상도라는 신호다.
+    expect(a.strayEdges).toBeGreaterThan(0)
+  })
+
+  it('균일한 확대본은 벗어난 경계가 없다', () => {
+    const src = createDoc(8, 8)
+    for (let y = 0; y < 8; y++) {
+      for (let x = 0; x < 8; x++) setPixel(src, x, y, [(x * 31) % 256, (y * 37) % 256, 128, 255])
+    }
+    const a = analyzePixelScale(resample(src, 32, 32, 'nearest'))
+    expect(a.scale).toBe(4)
+    expect(a.strayEdges).toBe(0)
+  })
+
+  it('확대되지 않은 그림은 1로 본다', () => {
+    const doc = createDoc(16, 16)
+    for (let y = 0; y < 16; y++) {
+      for (let x = 0; x < 16; x++) setPixel(doc, x, y, [(x * 53) % 256, (y * 97) % 256, 64, 255])
+    }
+    expect(analyzePixelScale(doc).scale).toBe(1)
+  })
+
+  it('경계가 거의 없으면 추정하지 않는다', () => {
+    // 단색은 어떤 배수로도 "맞아" 버린다.
+    const doc = createDoc(32, 32)
+    for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) setPixel(doc, x, y, [10, 20, 30, 255])
+    expect(analyzePixelScale(doc).scale).toBe(1)
+  })
+
+  it('detectPixelScale이 같은 값을 낸다', () => {
+    const doc = mixedScaleDice(64, 4)
+    expect(detectPixelScale(doc)).toBe(analyzePixelScale(doc).scale)
+  })
+})
+
+describe('snapToGrid', () => {
+  it('블록을 다수결 색으로 통일한다', () => {
+    const doc = createDoc(2, 2)
+    setPixel(doc, 0, 0, [10, 10, 10, 255])
+    setPixel(doc, 1, 0, [10, 10, 10, 255])
+    setPixel(doc, 0, 1, [10, 10, 10, 255])
+    setPixel(doc, 1, 1, [200, 0, 0, 255]) // 소수파
+    const out = snapToGrid(doc, 2)
+    for (const [x, y] of [[0,0],[1,0],[0,1],[1,1]]) {
+      expect(getPixel(out, x, y)).toEqual([10, 10, 10, 255])
+    }
+  })
+
+  it('격자에 맞춘 뒤에는 벗어난 경계가 사라진다', () => {
+    const doc = createDoc(16, 16)
+    for (let by = 0; by < 16; by += 4) {
+      for (let bx = 0; bx < 16; bx += 4) {
+        const tone = ((bx / 4 + by / 4) % 2 === 0 ? 90 : 160) as number
+        for (let y = by; y < by + 4; y++) {
+          for (let x = bx; x < bx + 4; x++) setPixel(doc, x, y, [tone, tone, tone, 255])
+        }
+      }
+    }
+    setPixel(doc, 5, 5, [255, 0, 0, 255]) // 격자를 벗어난 디테일
+    expect(analyzePixelScale(doc).strayEdges).toBeGreaterThan(0)
+    expect(analyzePixelScale(snapToGrid(doc, 4)).strayEdges).toBe(0)
+  })
+
+  it('1배는 원본을 그대로 돌려준다', () => {
+    const doc = createDoc(4, 4)
+    setPixel(doc, 1, 1, [1, 2, 3, 255])
+    expect(Array.from(snapToGrid(doc, 1).data)).toEqual(Array.from(doc.data))
+  })
+
+  it('원본을 훼손하지 않는다', () => {
+    const doc = createDoc(2, 2)
+    setPixel(doc, 1, 1, [200, 0, 0, 255])
+    snapToGrid(doc, 2)
+    expect(getPixel(doc, 1, 1)).toEqual([200, 0, 0, 255])
   })
 })

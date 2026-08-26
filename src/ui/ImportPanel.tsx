@@ -26,6 +26,7 @@ export function ImportPanel({ width, height, onApply, registerDrop }: ImportPane
   const [colors, setColors] = useState(defaultQuantizeOptions.colors)
   const [dither, setDither] = useState(false)
   const [alphaThreshold, setAlphaThreshold] = useState(defaultQuantizeOptions.alphaThreshold)
+  const [snapGrid, setSnapGrid] = useState(false)
 
   const [result, setResult] = useState<ImageImportResult | null>(null)
   const [busy, setBusy] = useState(false)
@@ -70,6 +71,7 @@ export function ImportPanel({ width, height, onApply, registerDrop }: ImportPane
           colors,
           dither,
           alphaThreshold,
+          snapGrid,
         })
         if (!cancelled) {
           setResult(r)
@@ -87,7 +89,7 @@ export function ImportPanel({ width, height, onApply, registerDrop }: ImportPane
     return () => {
       cancelled = true
     }
-  }, [file, targetW, targetH, keepAspect, mode, colors, dither, alphaThreshold])
+  }, [file, targetW, targetH, keepAspect, mode, colors, dither, alphaThreshold, snapGrid])
 
   // 미리보기 렌더
   useEffect(() => {
@@ -213,6 +215,19 @@ export function ImportPanel({ width, height, onApply, registerDrop }: ImportPane
             />
             원본 도트 유지 (확대된 픽셀 아트용)
           </label>
+
+          {result && result.detectedScale > 1 && (
+            <label className="check" style={{ marginTop: 6 }}>
+              <input
+                type="checkbox"
+                checked={snapGrid}
+                onChange={(e) => setSnapGrid(e.target.checked)}
+              />
+              {result.strayEdges > 0
+                ? `격자에 맞추기 (${result.detectedScale}배, 어긋난 경계 ${result.strayEdges}개)`
+                : `격자에 맞추기 (${result.detectedScale}배)`}
+            </label>
+          )}
 
           <div className="row" style={{ marginTop: 8 }}>
             <label>색상 {colors}</label>

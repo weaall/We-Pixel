@@ -1,5 +1,6 @@
+import type { RGBA } from './color'
 import type { PixelDoc } from './doc'
-import { createDoc } from './doc'
+import { createDoc, setPixel } from './doc'
 
 export type ResampleMode = 'area' | 'nearest'
 
@@ -83,33 +84,25 @@ function area(doc: PixelDoc, w: number, h: number): PixelDoc {
   return out
 }
 
-/**
- * 원본이 정수배로 확대된 픽셀 아트인지 추정한다.
- *
- * 같은 색이 연속되는 구간의 길이를 세어, 가로/세로 모두에서 공통 배수가 나오면
- * 그 배수를 돌려준다. 확대된 픽셀 아트를 area로 줄이면 도트가 뭉개지므로
- * 이 경우에는 nearest를 권해야 한다.
- */
-export function detectPixelScale(doc: PixelDoc): number {
-  const runs: number[] = []
-
-  for (let y = 0; y < doc.h; y += Math.max(1, Math.floor(doc.h / 16))) {
-    let run = 1
-    for (let x = 1; x < doc.w; x++) {
-      if (samePixel(doc, x, y, x - 1, y)) run++
-      else {
-        runs.push(run)
-        run = 1
-      }
-    }
-    runs.push(run)
-  }
-
-  if (runs.length < 4) return 1
-  const g = runs.reduce((acc, v) => gcd(acc, v))
-  // 지나치게 큰 값은 단색 이미지 같은 경우라 신뢰하지 않는다.
-  return g >= 2 && g <= 32 ? g : 1
+export interface ScaleAnalysis {
+  /** 추정한 블록 크기. 1이면 확대되지 않은 원본. */
+  scale: number
+  /** 색 경계가 그 격자에 맞는 비율. 1에 가까울수록 확신할 수 있다. */
+  alignment: number
+  /**
+   * 격자를 벗어난 경계의 개수.
+   *
+   * 0보다 크면 부분마다 해상도가 다르다는 뜻이다. 주사위 몸통은 32픽셀처럼
+   * 굵게, 눈은 64픽셀처럼 잘게 그린 이미지가 이런 경우다.
+   */
+  strayEdges: number
+  /** 전체 색 경계 수. 너무 적으면 추정을 믿을 수 없다. */
+  totalEdges: number
 }
+
+const MAX_DETECT_SCALE = 32
+/** 이 비율 이상 맞아야 그 격자로 인정한다. */
+const ALIGN_THRESHOLD = 0.9
 
 function samePixel(doc: PixelDoc, x1: number, y1: number, x2: number, y2: number): boolean {
   const a = (y1 * doc.w + x1) * 4
@@ -122,11 +115,95 @@ function samePixel(doc: PixelDoc, x1: number, y1: number, x2: number, y2: number
   )
 }
 
-function gcd(a: number, b: number): number {
-  while (b > 0) {
-    const t = a % b
-    a = b
-    b = t
+/** 색이 바뀌는 좌표들. 가로/세로를 따로 모은다. */
+function collectEdges(doc: PixelDoc): { xs: number[]; ys: number[] } {
+  const xs: number[] = []
+  const ys: number[] = []
+  for (let y = 0; y < doc.h; y++) {
+    for (let x = 1; x < doc.w; x++) {
+      if (!samePixel(doc, x, y, x - 1, y)) xs.push(x)
+    }
   }
-  return a
+  for (let x = 0; x < doc.w; x++) {
+    for (let y = 1; y < doc.h; y++) {
+      if (!samePixel(doc, x, y, x, y - 1)) ys.push(y)
+    }
+  }
+  return { xs, ys }
+}
+
+/**
+ * 확대된 픽셀 아트인지 추정한다.
+ *
+ * 예전에는 연속 구간 길이의 최대공약수를 썼는데, 1픽셀짜리 디테일이 하나만
+ * 있어도 결과가 1이 되어 버렸다. 몸통은 굵게 눈은 잘게 그린 그림에서는
+ * 항상 실패한다.
+ *
+ * 대신 색 경계가 격자에 맞는지를 본다. 잘게 그린 부분이 섞여 있어도 대부분의
+ * 경계가 같은 간격에 놓이면 그 간격이 진짜 블록 크기다.
+ */
+export function analyzePixelScale(doc: PixelDoc): ScaleAnalysis {
+  const { xs, ys } = collectEdges(doc)
+  const totalEdges = xs.length + ys.length
+  const flat: ScaleAnalysis = { scale: 1, alignment: 1, strayEdges: 0, totalEdges }
+  // 경계가 거의 없으면 단색에 가깝다. 아무 배수나 다 맞아 버리므로 추정하지 않는다.
+  if (totalEdges < 8) return flat
+
+  // 큰 배수부터 본다. 4배로 맞으면 2배로도 맞으므로 큰 쪽이 정답이다.
+  for (let scale = MAX_DETECT_SCALE; scale >= 2; scale--) {
+    if (doc.w % scale !== 0 || doc.h % scale !== 0) continue
+    let aligned = 0
+    for (const x of xs) if (x % scale === 0) aligned++
+    for (const y of ys) if (y % scale === 0) aligned++
+
+    const alignment = aligned / totalEdges
+    if (alignment >= ALIGN_THRESHOLD) {
+      return { scale, alignment, strayEdges: totalEdges - aligned, totalEdges }
+    }
+  }
+  return flat
+}
+
+/** 이전 이름. 배수만 필요한 곳에서 쓴다. */
+export function detectPixelScale(doc: PixelDoc): number {
+  return analyzePixelScale(doc).scale
+}
+
+/**
+ * 격자에 맞춰 정리한다.
+ *
+ * 블록마다 가장 많이 쓰인 색으로 통일한다. 부분마다 해상도가 다른 그림을
+ * 하나의 해상도로 맞출 때 쓴다 — 잘게 그린 디테일은 블록 색에 흡수된다.
+ */
+export function snapToGrid(doc: PixelDoc, scale: number): PixelDoc {
+  if (scale <= 1) return { w: doc.w, h: doc.h, data: new Uint8ClampedArray(doc.data) }
+
+  const out = createDoc(doc.w, doc.h)
+  for (let by = 0; by < doc.h; by += scale) {
+    for (let bx = 0; bx < doc.w; bx += scale) {
+      const counts = new Map<string, { n: number; color: RGBA }>()
+      for (let y = by; y < Math.min(by + scale, doc.h); y++) {
+        for (let x = bx; x < Math.min(bx + scale, doc.w); x++) {
+          const i = (y * doc.w + x) * 4
+          const color: RGBA = [doc.data[i], doc.data[i + 1], doc.data[i + 2], doc.data[i + 3]]
+          const key = color.join()
+          const hit = counts.get(key)
+          if (hit) hit.n++
+          else counts.set(key, { n: 1, color })
+        }
+      }
+      let best: RGBA = [0, 0, 0, 0]
+      let bestN = -1
+      for (const { n, color } of counts.values()) {
+        if (n > bestN) {
+          bestN = n
+          best = color
+        }
+      }
+      for (let y = by; y < Math.min(by + scale, doc.h); y++) {
+        for (let x = bx; x < Math.min(bx + scale, doc.w); x++) setPixel(out, x, y, best)
+      }
+    }
+  }
+  return out
 }

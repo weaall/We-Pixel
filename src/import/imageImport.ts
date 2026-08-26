@@ -3,7 +3,7 @@ import { MAX_SIZE, MIN_SIZE } from '../core/doc'
 import type { QuantizeOptions } from '../core/quantize'
 import { quantize } from '../core/quantize'
 import type { ResampleMode } from '../core/resample'
-import { detectPixelScale, resample } from '../core/resample'
+import { analyzePixelScale, resample, snapToGrid } from '../core/resample'
 
 export interface ImageImportOptions extends QuantizeOptions {
   w: number
@@ -11,6 +11,13 @@ export interface ImageImportOptions extends QuantizeOptions {
   mode: ResampleMode
   /** 가로세로 비율을 유지해 목표 크기 안에 맞춘다. */
   keepAspect: boolean
+  /**
+   * 축소 전에 감지된 격자로 정리한다.
+   *
+   * 부분마다 해상도가 다른 그림(몸통은 굵고 디테일만 잘게 찍힌 경우)을
+   * 하나의 해상도로 맞춘다.
+   */
+  snapGrid: boolean
 }
 
 export interface ImageImportResult {
@@ -18,6 +25,8 @@ export interface ImageImportResult {
   source: { w: number; h: number }
   /** 원본이 정수배로 확대된 픽셀 아트로 보이면 그 배수. 아니면 1. */
   detectedScale: number
+  /** 감지된 격자를 벗어난 색 경계 수. 0보다 크면 부분마다 해상도가 다르다. */
+  strayEdges: number
   /** 사용자에게 알려야 할 판단들. 조용히 처리하면 결과가 왜 이런지 알 수 없다. */
   notes: string[]
 }
@@ -74,11 +83,25 @@ export async function imageToDoc(
   const source = await decode(file)
   const notes: string[] = []
 
-  const detectedScale = detectPixelScale(source)
+  const analysis = analyzePixelScale(source)
+  const detectedScale = analysis.scale
+
   if (detectedScale > 1 && options.mode === 'area') {
     notes.push(
       `원본이 ${detectedScale}배로 확대된 픽셀 아트로 보입니다. "원본 도트 유지"를 켜면 더 선명합니다.`,
     )
+  }
+  if (analysis.strayEdges > 0) {
+    notes.push(
+      `부분마다 해상도가 다릅니다 — ${detectedScale}배 격자를 벗어난 경계가 ${analysis.strayEdges}개 있습니다. "격자에 맞추기"로 통일할 수 있습니다.`,
+    )
+  }
+
+  // 격자 정리는 축소 전에 해야 한다. 축소 후에는 이미 섞여 버린다.
+  const prepared =
+    options.snapGrid && detectedScale > 1 ? snapToGrid(source, detectedScale) : source
+  if (options.snapGrid && detectedScale <= 1) {
+    notes.push('감지된 격자가 없어 격자 맞추기를 건너뛰었습니다.')
   }
 
   const target = options.keepAspect
@@ -89,7 +112,7 @@ export async function imageToDoc(
     notes.push(`비율을 유지해 ${target.w}x${target.h} 로 맞췄습니다.`)
   }
 
-  const scaled = resample(source, target.w, target.h, options.mode)
+  const scaled = resample(prepared, target.w, target.h, options.mode)
   const result = quantize(scaled, options)
 
   const used = countColors(result)
@@ -97,7 +120,13 @@ export async function imageToDoc(
     notes.push(`원본 색이 적어 ${used}색으로 끝났습니다 (요청 ${options.colors}색).`)
   }
 
-  return { doc: result, source: { w: source.w, h: source.h }, detectedScale, notes }
+  return {
+    doc: result,
+    source: { w: source.w, h: source.h },
+    detectedScale,
+    strayEdges: analysis.strayEdges,
+    notes,
+  }
 }
 
 function countColors(doc: PixelDoc): number {
