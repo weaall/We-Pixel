@@ -1,5 +1,5 @@
 import { inflateSync } from 'node:zlib'
-import type { PixelDoc } from '../src/core/doc'
+import type { PixelDoc } from '../core/doc'
 
 /**
  * 최소 PNG 디코더. 8비트 색 유형 0/2/3/6, 인터레이스 없음.
@@ -42,7 +42,7 @@ export function decodePng(buf: Buffer): PixelDoc {
 
   const raw = inflateSync(Buffer.concat(idat))
   const stride = w * channels
-  const lines = unfilter(raw, w, h, stride, channels)
+  const lines = unfilter(raw, h, stride, channels)
 
   const data = new Uint8ClampedArray(w * h * 4)
   for (let y = 0; y < h; y++) {
@@ -70,7 +70,7 @@ export function decodePng(buf: Buffer): PixelDoc {
 }
 
 /** PNG 는 줄마다 다섯 가지 예측 필터 중 하나를 쓴다. 되돌려야 원본 바이트가 나온다. */
-function unfilter(raw: Buffer, w: number, h: number, stride: number, channels: number): Buffer {
+function unfilter(raw: Buffer, h: number, stride: number, channels: number): Buffer {
   const out = Buffer.alloc(h * stride)
   let pos = 0
   for (let y = 0; y < h; y++) {

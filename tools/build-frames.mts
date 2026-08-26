@@ -11,8 +11,8 @@
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { packRows, toSpec } from '../src/core/codec'
-import { analyzePixelScale, resample } from '../src/core/resample'
-import { decodePng } from './decode-png'
+import { toLogicalGrid } from '../src/core/resample'
+import { decodePng } from '../src/import/pngDecode'
 
 const dir = process.argv[2]
 if (!dir) {
@@ -37,9 +37,8 @@ let size: string | null = null
 
 for (const { key, file } of entries) {
   const raw = decodePng(readFileSync(join(dir, file)))
-  const a = analyzePixelScale(raw)
   // 저장은 64x64 여도 실제 격자가 32x32 인 경우가 흔하다. 그대로 두면 편집 때 어긋난다.
-  const doc = a.scale > 1 ? resample(raw, raw.w / a.scale, raw.h / a.scale, 'average') : raw
+  const { doc, scale } = toLogicalGrid(raw)
   const spec = toSpec(doc)
 
   const dims = `${spec.w}x${spec.h}`
@@ -50,7 +49,7 @@ for (const { key, file } of entries) {
   }
 
   console.error(
-    `${file.padEnd(12)} ${raw.w}x${raw.h} -> ${dims} (${a.scale}배)  ` +
+    `${file.padEnd(12)} ${raw.w}x${raw.h} -> ${dims} (${scale}배)  ` +
       `색 ${Object.keys(spec.palette).length}종`,
   )
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { resample, toLogicalGrid } from '../src/core/resample'
 import { fromHsl, parseHex, toHex } from '../src/core/color'
 import { fromSpec, toSpec, TooManyColorsError, usedColors } from '../src/core/codec'
 import {
@@ -218,5 +219,48 @@ describe('codec', () => {
     const used = usedColors(doc)
     expect(used[0]).toEqual({ hex: '#ff0000', count: 2 })
     expect(used[1]).toEqual({ hex: '#ffffff', count: 1 })
+  })
+})
+
+describe('toLogicalGrid', () => {
+  it('정수배로 늘린 그림을 원래 격자로 되돌린다', () => {
+    const src = createDoc(4, 4)
+    setPixel(src, 1, 1, [255, 0, 0, 255])
+    setPixel(src, 2, 2, [0, 0, 255, 255])
+    const big = resample(src, 12, 12, 'nearest')
+
+    const { doc, scale } = toLogicalGrid(big)
+    expect(scale).toBe(3)
+    expect(doc.w).toBe(4)
+    expect(Array.from(doc.data)).toEqual(Array.from(src.data))
+  })
+
+  it('원래 격자인 그림은 건드리지 않는다', () => {
+    const src = createDoc(8, 8)
+    for (let x = 0; x < 8; x++) setPixel(src, x, x, [255, 0, 0, 255])
+    const { doc, scale } = toLogicalGrid(src)
+    expect(scale).toBe(1)
+    expect(Array.from(doc.data)).toEqual(Array.from(src.data))
+  })
+
+  it('원본에 없던 색을 만들지 않는다', () => {
+    // 평균을 내면 블록이 어긋났을 때 중간색이 생기고, 색 교체가 더 이상
+    // 그 색을 잡지 못한다. 다수결로 고르면 항상 원본에 있던 색이다.
+    const src = createDoc(3, 3)
+    setPixel(src, 0, 0, [255, 0, 0, 255])
+    setPixel(src, 1, 1, [0, 0, 255, 255])
+    setPixel(src, 2, 2, [0, 255, 0, 255])
+    const big = resample(src, 12, 12, 'nearest')
+
+    const colorsOf = (d: PixelDoc) => {
+      const set = new Set<string>()
+      for (let i = 0; i < d.data.length; i += 4) {
+        set.add(`${d.data[i]},${d.data[i + 1]},${d.data[i + 2]},${d.data[i + 3]}`)
+      }
+      return set
+    }
+    const before = colorsOf(big)
+    const { doc } = toLogicalGrid(big)
+    for (const color of colorsOf(doc)) expect(before.has(color)).toBe(true)
   })
 })

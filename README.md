@@ -441,7 +441,7 @@ src/
     selection.ts         선택 영역 복사/비우기/옮기기/붙여넣기
     quantize.ts          미디언 컷 색상 양자화 + 디더링
     recolor.ts           색상 교체 (투명 인지, 허용 오차)
-    resample.ts          축소 (area / nearest) + 확대 배수 감지
+    resample.ts          축소 (area / nearest) + 확대 배수 감지 + 실제 격자 복원
     generate/
       variants.ts        색 변형 (형태 보존)
   export/
@@ -453,7 +453,8 @@ src/
     specStore.ts         디자인 저장소 (서버 API / 브라우저 localStorage)
     pages.ts             페이지 목록 자동 저장/복원
   import/
-    imageImport.ts       이미지 파일 -> 픽셀 문서 (디코딩 + 축소 + 양자화)
+    imageImport.ts       이미지 파일 -> 픽셀 문서 (브라우저, 디코딩 + 축소 + 양자화)
+    pngDecode.ts         의존성 없는 PNG 디코더 (Node, zlib 만)
   ui/                    React 컴포넌트
     LeftRail.tsx         도구 아이콘 레일 + 브러시/색상 팝오버
     Modal.tsx            사이드바 대신 쓰는 모달

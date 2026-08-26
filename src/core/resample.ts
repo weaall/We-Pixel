@@ -207,3 +207,20 @@ export function snapToGrid(doc: PixelDoc, scale: number): PixelDoc {
   }
   return out
 }
+
+/**
+ * 확대되어 저장된 그림을 실제 격자로 되돌린다.
+ *
+ * 64x64 로 저장된 그림이 실은 32x32 를 2배로 늘린 것인 경우가 흔하다. 그대로
+ * 편집하면 한 칸을 찍었는데 네 칸 중 하나만 칠해진다.
+ *
+ * 평균을 내면 안 된다. 블록에 어긋난 픽셀이 하나라도 있으면 원본에 없던
+ * 중간색이 생기고, 색 교체가 더 이상 그 색을 잡지 못한다. 다수결로 블록을
+ * 고르고 그 값을 그대로 집는다.
+ */
+export function toLogicalGrid(doc: PixelDoc): { doc: PixelDoc; scale: number } {
+  const { scale } = analyzePixelScale(doc)
+  if (scale <= 1) return { doc: { w: doc.w, h: doc.h, data: new Uint8ClampedArray(doc.data) }, scale }
+  const snapped = snapToGrid(doc, scale)
+  return { doc: resample(snapped, doc.w / scale, doc.h / scale, 'nearest'), scale }
+}

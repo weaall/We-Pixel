@@ -9,8 +9,8 @@
 import { readFileSync } from 'node:fs'
 import { packRows, toSpec } from '../src/core/codec'
 import { dominantHue, paletteOf } from '../src/core/generate/variants'
-import { analyzePixelScale, resample } from '../src/core/resample'
-import { decodePng } from './decode-png'
+import { analyzePixelScale, toLogicalGrid } from '../src/core/resample'
+import { decodePng } from '../src/import/pngDecode'
 
 const files = process.argv.slice(2)
 if (files.length === 0) {
@@ -20,8 +20,8 @@ if (files.length === 0) {
 
 for (const file of files) {
   const raw = decodePng(readFileSync(file))
+  const { doc, scale } = toLogicalGrid(raw)
   const a = analyzePixelScale(raw)
-  const doc = a.scale > 1 ? resample(raw, raw.w / a.scale, raw.h / a.scale, 'average') : raw
   const spec = toSpec(doc)
   const plain = spec.rows.join('').length
   const packed = packRows(spec).join('').length
