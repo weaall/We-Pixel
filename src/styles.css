@@ -931,3 +931,36 @@ label.check input {
   background: var(--accent);
   border-color: var(--accent);
 }
+
+.doc-thumb {
+  display: block;
+  image-rendering: pixelated;
+  background: #4a4a58;
+  border-radius: 3px;
+}
+
+/* 변형이 늘어나면 가로로 넘친다. 감싸지 말고 옆으로 밀어야 순서가 유지된다. */
+.variant-strip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 10px;
+  margin-bottom: 10px;
+  background: #14141c;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.variant-strip figure {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+}
+
+.variant-strip figcaption {
+  font-size: 11px;
+  color: var(--muted);
+}

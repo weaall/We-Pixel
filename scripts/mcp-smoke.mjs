@@ -50,7 +50,7 @@ await client.connect(transport)
 try {
   const { tools } = await client.listTools()
   const names = tools.map((t) => t.name).sort()
-  check('도구 등록', names.length === 8, names.join(', '))
+  check('도구 등록', names.length === 9, names.join(', '))
 
   // draw_design — 잘못된 입력이 조용히 통과하지 않아야 한다
   const bad = await client.callTool({
@@ -119,6 +119,26 @@ try {
     arguments: { name: 'SmokeDice', size: 32, seed: 'lucky', material: 'gem', hue: 32 },
   })
   check('generate_dice 성공', !dice.isError && !!imageOf(dice), textOf(dice).split('\n')[0])
+
+  const variants = await client.callTool({
+    name: 'generate_variants',
+    arguments: { name: 'SmokeDice', count: 3, hue: 200 },
+  })
+  const variantText = textOf(variants)
+  check(
+    'generate_variants 성공',
+    !variants.isError && !!imageOf(variants) && variantText.includes('SmokeDice-3'),
+    variantText.split('\n')[0],
+  )
+
+  const diceSpec = await client.callTool({ name: 'get_design', arguments: { name: 'SmokeDice' } })
+  const variantSpec = await client.callTool({
+    name: 'get_design',
+    arguments: { name: 'SmokeDice-1' },
+  })
+  // 색만 바뀌어야 한다. 행 문자열이 같으면 어떤 칸이 칠해졌는지가 같다는 뜻이다.
+  const rowsOf = (r) => textOf(r).split('rows:')[1]
+  check('색 변형은 형태를 건드리지 않는다', rowsOf(diceSpec) === rowsOf(variantSpec))
 
   const pat = await client.callTool({
     name: 'generate_pattern',

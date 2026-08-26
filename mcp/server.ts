@@ -11,6 +11,7 @@ import { defaultDiceOptions, generateDice, randomPips } from '../src/core/genera
 import { generatePattern } from '../src/core/generate/pattern'
 import { generateSprite } from '../src/core/generate/sprite'
 import { randomSeed, resolveSeed } from '../src/core/generate/rng'
+import { defaultVariantSetOptions, makeVariants } from '../src/core/generate/variants'
 import { defaultActionSpec } from '../src/export/csharp'
 import { buildPackage } from '../src/export/package'
 import { defaultImportOptions } from '../src/export/unityMeta'
@@ -295,6 +296,83 @@ server.registerTool(
         pips: (pips as [number, number, number] | undefined) ?? randomPips(resolved),
       })
       return await designResult(name, doc, `주사위를 생성했습니다 (시드 ${resolved}).`)
+    } catch (err) {
+      return fail(err)
+    }
+  },
+)
+
+server.registerTool(
+  'generate_variants',
+  {
+    title: '색 변형 만들기',
+    description: [
+      '저장된 디자인의 색만 바꿔 여러 벌을 만든다.',
+      '팔레트만 옮기므로 형태는 한 픽셀도 달라지지 않는다 — 같은 주사위의 다른 색,',
+      '같은 갑옷의 다른 등급처럼 세트를 뽑을 때 쓴다.',
+      '',
+      '원본의 대표 색조에서 각 색이 얼마나 벗어나 있었는지를 그대로 옮기므로',
+      '밝은 면은 따뜻하고 그늘은 차가운 픽셀 아트의 색 배치가 유지된다.',
+    ].join('\n'),
+    inputSchema: {
+      name: nameArg.describe('원본 디자인 이름.'),
+      count: z.number().int().min(1).max(12).default(4).describe('만들 벌 수.'),
+      hue: z.number().min(0).max(360).default(30).describe('첫 변형의 색조.'),
+      step: z
+        .number()
+        .min(0)
+        .max(180)
+        .default(0)
+        .describe('변형 사이 색조 간격. 0이면 360도를 고르게 나눈다.'),
+      saturation: z.number().min(0).max(2).default(1).describe('채도 배율.'),
+      contrast: z.number().min(0.2).max(2).default(1).describe('명암 폭 배율.'),
+      brightness: z.number().min(-0.3).max(0.3).default(0).describe('밝기 이동.'),
+      keepNeutral: z
+        .boolean()
+        .default(true)
+        .describe('외곽선처럼 채도가 없는 색은 그대로 둔다.'),
+      prefix: z.string().optional().describe('저장 이름 접두어. 비우면 원본 이름을 쓴다.'),
+    },
+  },
+  async ({ name, count, hue, step, saturation, contrast, brightness, keepNeutral, prefix }) => {
+    try {
+      const source = fromSpec(await loadSpec(name))
+      const variants = makeVariants(source, {
+        ...defaultVariantSetOptions,
+        count,
+        hue,
+        step,
+        saturation,
+        contrast,
+        brightness,
+        keepNeutral,
+      })
+
+      const base = prefix ?? name
+      const saved: string[] = []
+      for (const [i, v] of variants.entries()) {
+        saved.push(await saveSpec(`${base}-${i + 1}`, toSpec(v.doc)))
+      }
+
+      const scale = previewScale(source)
+      return {
+        content: [
+          {
+            type: 'text',
+            text: [
+              `"${name}" 의 색 변형 ${variants.length}벌을 만들었습니다.`,
+              ...saved.map((path, i) => `  ${Math.round(variants[i].hue)}도 -> ${path}`),
+              '형태는 원본과 동일합니다. 팔레트만 바뀌었습니다.',
+              `아래 이미지는 첫 변형을 ${scale}배로 확대한 것입니다.`,
+            ].join('\n'),
+          },
+          {
+            type: 'image',
+            data: toBase64(encodePng(variants[0].doc, scale)),
+            mimeType: 'image/png',
+          },
+        ],
+      }
     } catch (err) {
       return fail(err)
     }

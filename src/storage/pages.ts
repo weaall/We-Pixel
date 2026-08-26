@@ -130,9 +130,9 @@ export function clearStoredPages(): void {
 }
 
 /** 이름이 겹치지 않게 번호를 붙인다. */
-export function nextPageName(existing: ReadonlyArray<Page>): string {
-  for (let n = existing.length + 1; ; n++) {
-    const name = `페이지 ${n}`
+export function nextPageName(existing: ReadonlyArray<Page>, prefix = '페이지'): string {
+  for (let n = 1; ; n++) {
+    const name = `${prefix} ${n}`
     if (!existing.some((p) => p.name === name)) return name
   }
 }

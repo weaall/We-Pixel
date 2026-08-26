@@ -33,6 +33,7 @@ import {
   clearStoredPages,
   createPage,
   loadPages,
+  newPageId,
   nextPageName,
   savePages,
 } from '../storage/pages'
@@ -232,6 +233,22 @@ export function App() {
       return [...list, page]
     })
   }, [doc.w, doc.h])
+
+  /**
+   * 여러 장을 한 번에 펼친다. 색 변형처럼 한 번에 여러 벌이 나오는 기능용이다.
+   *
+   * 이름을 미리 다 짓지 않고 하나씩 붙여 나간다. 같은 목록을 보고 지으면
+   * 넷 다 같은 이름이 된다.
+   */
+  const addPages = useCallback((docs: ReadonlyArray<PixelDoc>, prefix = '변형') => {
+    if (docs.length === 0) return
+    setPages((list) => {
+      const next = [...list]
+      for (const d of docs) next.push({ id: newPageId(), name: nextPageName(next, prefix), doc: d })
+      setActiveId(next[list.length].id)
+      return next
+    })
+  }, [])
 
   const closePage = useCallback(
     (id: string) => {
@@ -647,7 +664,13 @@ export function App() {
       )}
       {modal === 'generate' && (
         <Modal title="자동 생성" onClose={() => setModal(null)}>
-          <GeneratePanel width={doc.w} height={doc.h} onGenerate={replaceDoc} />
+          <GeneratePanel
+            width={doc.w}
+            height={doc.h}
+            doc={doc}
+            onGenerate={replaceDoc}
+            onGenerateMany={addPages}
+          />
         </Modal>
       )}
       {modal === 'import' && (

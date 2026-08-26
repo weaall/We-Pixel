@@ -61,3 +61,23 @@ export function fromHsl(h: number, s: number, l: number, a = 255): RGBA {
   else [r, g, b] = [c, 0, x]
   return [(r + m) * 255, (g + m) * 255, (b + m) * 255, a]
 }
+
+/** RGBA -> HSL(h: 0-360, s/l: 0-1). 알파는 버린다. */
+export function toHsl(c: RGBA): { h: number; s: number; l: number } {
+  const r = c[0] / 255
+  const g = c[1] / 255
+  const b = c[2] / 255
+  const max = Math.max(r, g, b)
+  const min = Math.min(r, g, b)
+  const l = (max + min) / 2
+  const d = max - min
+  // 무채색은 색조가 정의되지 않는다. 0으로 두면 빨강 쪽으로 끌려가므로 s로 걸러 쓴다.
+  if (d === 0) return { h: 0, s: 0, l }
+
+  const s = d / (1 - Math.abs(2 * l - 1))
+  let h: number
+  if (max === r) h = ((g - b) / d) % 6
+  else if (max === g) h = (b - r) / d + 2
+  else h = (r - g) / d + 4
+  return { h: ((h * 60) % 360 + 360) % 360, s, l }
+}
