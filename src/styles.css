@@ -418,7 +418,7 @@ label.check input {
 
 .modal {
   width: min(340px, 100%);
-  max-height: min(680px, calc(100vh - 48px));
+  max-height: min(760px, calc(100vh - 40px));
   display: flex;
   flex-direction: column;
   background: var(--panel);
@@ -429,7 +429,7 @@ label.check input {
 }
 
 .modal.wide {
-  width: min(520px, 100%);
+  width: min(560px, 100%);
 }
 
 .modal-head {
@@ -668,4 +668,130 @@ label.check input {
 .seg button {
   padding: 5px 0;
   font-size: 11px;
+}
+
+/**
+ * 색상 교체 패널.
+ *
+ * 색이 여러 개면 세로 목록이 자연스럽다. 미리보기는 위에 고정해야
+ * 목록을 훑는 동안에도 결과 조합을 계속 볼 수 있다.
+ */
+.recolor {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.recolor-preview {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px;
+  margin-bottom: 10px;
+  background: #14141c;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.recolor-preview canvas {
+  display: block;
+  image-rendering: pixelated;
+  background: #4a4a58;
+  border-radius: 3px;
+  flex: none;
+}
+
+.recolor-preview > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.recolor-preview strong {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.recolor-preview span {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.recolor-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.recolor-row {
+  display: grid;
+  grid-template-columns: 20px 74px 42px 14px 44px auto auto auto;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+}
+
+.recolor-row:hover {
+  background: var(--panel-2);
+}
+
+/* 지정한 행을 눈에 띄게 해야 무엇을 바꾸는지 한눈에 보인다. */
+.recolor-row.changed {
+  border-color: var(--accent-dim);
+  background: rgb(108 158 248 / 8%);
+}
+
+.recolor-row .swatch {
+  width: 20px;
+  height: 20px;
+  cursor: default;
+}
+
+.recolor-hex {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.recolor-count {
+  font-size: 11px;
+  color: var(--muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.recolor-arrow {
+  color: var(--muted);
+  text-align: center;
+}
+
+.recolor-row input[type='color'] {
+  width: 44px;
+  height: 24px;
+  padding: 1px;
+}
+
+.recolor-row button {
+  padding: 4px 7px;
+  font-size: 11px;
+}
+
+.recolor-foot {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.recolor-foot .swatches {
+  grid-template-columns: repeat(16, 1fr);
+}
+
+.recolor-foot .swatch {
+  cursor: default;
 }

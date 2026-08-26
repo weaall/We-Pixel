@@ -452,7 +452,7 @@ export function App() {
         </Modal>
       )}
       {modal === 'recolor' && (
-        <Modal title="색상 교체" onClose={() => setModal(null)}>
+        <Modal title="색상 교체" onClose={() => setModal(null)} wide>
           <RecolorPanel
             doc={doc}
             current={color}

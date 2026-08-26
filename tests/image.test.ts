@@ -3,7 +3,7 @@ import type { RGBA } from '../src/core/color'
 import { createDoc, getPixel, setPixel } from '../src/core/doc'
 import type { PixelDoc } from '../src/core/doc'
 import { quantize } from '../src/core/quantize'
-import { countMatches, replaceColor } from '../src/core/recolor'
+import { countMatches, replaceColor, replaceColors } from '../src/core/recolor'
 import { detectPixelScale, resample } from '../src/core/resample'
 
 const RED: RGBA = [255, 0, 0, 255]
@@ -169,5 +169,74 @@ describe('recolor', () => {
 
   it('없는 색은 0을 돌려준다', () => {
     expect(replaceColor(mixed(), [1, 2, 3, 255], BLUE, 0).changed).toBe(0)
+  })
+
+  describe('여러 색 한 번에', () => {
+    const GREEN: RGBA = [0, 255, 0, 255]
+
+    it('매핑 여러 개를 한 번에 적용한다', () => {
+      const r = replaceColors(mixed(), [
+        { from: BLACK, to: BLUE },
+        { from: RED, to: GREEN },
+      ])
+      expect(r.changed).toBe(2)
+      expect(getPixel(r.doc, 0, 0)).toEqual(BLUE)
+      expect(getPixel(r.doc, 2, 0)).toEqual(GREEN)
+      expect(getPixel(r.doc, 1, 0)[3]).toBe(0)
+    })
+
+    it('연쇄로 적용되지 않는다', () => {
+      // A→B 와 B→C 를 함께 주면, 순차 적용은 원래 A 였던 픽셀까지 C 로 만든다.
+      // 사용자가 지정한 것은 "A는 B로, B는 C로"이지 "A는 C로"가 아니다.
+      const doc = createDoc(2, 1)
+      setPixel(doc, 0, 0, RED)
+      setPixel(doc, 1, 0, BLUE)
+      const r = replaceColors(doc, [
+        { from: RED, to: BLUE },
+        { from: BLUE, to: GREEN },
+      ])
+      expect(getPixel(r.doc, 0, 0)).toEqual(BLUE)
+      expect(getPixel(r.doc, 1, 0)).toEqual(GREEN)
+    })
+
+    it('두 색을 서로 맞바꿀 수 있다', () => {
+      const doc = createDoc(2, 1)
+      setPixel(doc, 0, 0, RED)
+      setPixel(doc, 1, 0, BLUE)
+      const r = replaceColors(doc, [
+        { from: RED, to: BLUE },
+        { from: BLUE, to: RED },
+      ])
+      expect(getPixel(r.doc, 0, 0)).toEqual(BLUE)
+      expect(getPixel(r.doc, 1, 0)).toEqual(RED)
+      expect(r.changed).toBe(2)
+    })
+
+    it('같은 색으로 두는 매핑은 변경으로 세지 않는다', () => {
+      // UI가 모든 색을 행으로 깔고 건드리지 않은 행은 그대로 두므로,
+      // 이것을 세면 "N픽셀이 바뀝니다"가 항상 전체 픽셀 수가 된다.
+      const r = replaceColors(mixed(), [
+        { from: BLACK, to: BLACK },
+        { from: RED, to: BLUE },
+      ])
+      expect(r.changed).toBe(1)
+    })
+
+    it('매핑이 없으면 원본 그대로다', () => {
+      const doc = mixed()
+      const r = replaceColors(doc, [])
+      expect(r.changed).toBe(0)
+      expect(Array.from(r.doc.data)).toEqual(Array.from(doc.data))
+    })
+
+    it('앞선 매핑이 우선한다', () => {
+      const doc = createDoc(1, 1)
+      setPixel(doc, 0, 0, RED)
+      const r = replaceColors(doc, [
+        { from: RED, to: BLUE },
+        { from: RED, to: GREEN },
+      ])
+      expect(getPixel(r.doc, 0, 0)).toEqual(BLUE)
+    })
   })
 })
