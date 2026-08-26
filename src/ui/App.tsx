@@ -655,6 +655,7 @@ export function App() {
           <ImportPanel
             width={doc.w}
             height={doc.h}
+            doc={doc}
             onApply={(next) => {
               replaceDoc(next)
               setModal(null)

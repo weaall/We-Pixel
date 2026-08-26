@@ -913,3 +913,21 @@ label.check input {
   font-size: 11px;
   max-width: 60%;
 }
+
+/* 3x3 위치 선택. 드롭다운보다 어디에 놓이는지 바로 보인다. */
+.anchor-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 20px);
+  grid-template-rows: repeat(3, 20px);
+  gap: 3px;
+}
+
+.anchor-grid button {
+  padding: 0;
+  border-radius: 4px;
+}
+
+.anchor-grid button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+}
