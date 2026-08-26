@@ -9,7 +9,14 @@ import { resolve } from 'node:path'
  * .env 파서는 20줄이면 되므로 의존성을 늘릴 이유도 없다.
  */
 
-export const DEFAULT_MODEL = 'gemini-2.5-flash'
+/**
+ * 기본 모델.
+ *
+ * gemini-2.5-flash 는 신규 사용자에게 더 이상 제공되지 않는다
+ * (NOT_FOUND: no longer available to new users).
+ * 다른 모델을 쓰려면 GEMINI_MODEL 환경변수로 덮어쓴다.
+ */
+export const DEFAULT_MODEL = 'gemini-3.6-flash'
 
 export interface ServerConfig {
   apiKey: string
