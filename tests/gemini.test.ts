@@ -12,6 +12,7 @@ import {
 } from '../server/gemini'
 import { createDoc, getPixel, setPixel } from '../src/core/doc'
 import { replaceColors } from '../src/core/recolor'
+import { findRowProblems } from '../server/llm'
 import type { RGBA } from '../src/core/color'
 
 describe('fitRow', () => {
@@ -280,5 +281,30 @@ describe('색만 바꾸기 (팔레트 교체)', () => {
     const { changed, skipped } = buildRecolorMappings(plan, [{ char: 'Z', hex: '#123456' }])
     expect(changed).toBe(0)
     expect(skipped).toBe(2)
+  })
+})
+
+describe('행 형식 검증 (재요청 판단)', () => {
+  it('정상이면 문제 없음', () => {
+    expect(findRowProblems(['abcd', 'abcd'], 4, 2)).toEqual([])
+  })
+
+  it('길이가 틀린 행을 집어낸다', () => {
+    const problems = findRowProblems(['abcd', 'abc', 'abcde'], 4, 3)
+    expect(problems).toEqual([
+      { index: 1, length: 3 },
+      { index: 2, length: 5 },
+    ])
+  })
+
+  it('행 수가 틀리면 index -1 로 보고한다', () => {
+    const problems = findRowProblems(['abcd'], 4, 3)
+    expect(problems).toContainEqual({ index: -1, length: 1 })
+  })
+
+  it('길이와 개수를 함께 보고한다', () => {
+    const problems = findRowProblems(['abc', 'abcd'], 4, 3)
+    expect(problems.filter((p) => p.index !== -1).length).toBe(1)
+    expect(problems.some((p) => p.index === -1)).toBe(true)
   })
 })

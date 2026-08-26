@@ -9,6 +9,7 @@ import { replaceColors } from '../src/core/recolor'
 import { getPixel, setPixel } from '../src/core/doc'
 import type { PixelDoc } from '../src/core/doc'
 import type { ServerConfig } from './env'
+import { generateGrid, generatePalette } from './llm'
 import type { ApiHandler } from './http'
 import { readBody, send } from './http'
 
@@ -22,7 +23,6 @@ import { readBody, send } from './http'
  * 그대로 써야 "개발에서는 되는데 배포하면 404"가 생기지 않는다.
  */
 
-const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models'
 
 const SYSTEM_INSTRUCTION = [
   '당신은 픽셀 아트 도터입니다. 요청받은 대상을 지정된 크기의 픽셀 그리드로 그립니다.',
@@ -98,51 +98,6 @@ const RECOLOR_INSTRUCTION = [
   '- 바꿀 필요가 없는 색은 원래 값을 그대로 돌려주세요.',
   '- hex는 "#rrggbb" 형식입니다.',
 ].join('\n')
-
-/** 팔레트만 받을 때 쓰는 스키마. rows가 없으므로 모델이 그림을 그릴 수 없다. */
-const PALETTE_ONLY_SCHEMA = {
-  type: 'OBJECT',
-  properties: {
-    palette: {
-      type: 'ARRAY',
-      description: '받은 것과 같은 char 목록. 각 hex만 새 색으로.',
-      items: {
-        type: 'OBJECT',
-        properties: {
-          char: { type: 'STRING' },
-          hex: { type: 'STRING', description: '#rrggbb' },
-        },
-        required: ['char', 'hex'],
-      },
-    },
-  },
-  required: ['palette'],
-} as const
-
-/** Gemini의 responseSchema는 동적 키를 표현할 수 없어 팔레트를 배열로 받는다. */
-const RESPONSE_SCHEMA = {
-  type: 'OBJECT',
-  properties: {
-    palette: {
-      type: 'ARRAY',
-      description: '사용할 색 목록. 4~10개.',
-      items: {
-        type: 'OBJECT',
-        properties: {
-          char: { type: 'STRING', description: '그리드에서 이 색을 나타낼 한 글자' },
-          hex: { type: 'STRING', description: '#rrggbb 형식' },
-        },
-        required: ['char', 'hex'],
-      },
-    },
-    rows: {
-      type: 'ARRAY',
-      description: '위에서 아래로 h개의 행. 각 행은 w글자.',
-      items: { type: 'STRING' },
-    },
-  },
-  required: ['palette', 'rows'],
-} as const
 
 export interface RawResult {
   palette?: Array<{ char?: string; hex?: string }>
@@ -390,14 +345,13 @@ export type GenerateMode = 'create' | 'edit' | 'add' | 'recolor'
 
 /** 팔레트만 받아온다. 그리드를 요청하지 않으므로 모양이 바뀔 수 없다. */
 async function callGeminiPalette(
-  apiKey: string,
-  model: string,
+  config: ServerConfig,
   prompt: string,
   plan: RecolorPlan,
   preview: PixelSpec,
 ): Promise<Array<{ char?: string; hex?: string }>> {
   const list = plan.chars.map((c, i) => `  "${c}": "${plan.hexes[i]}"`).join('\n')
-  const userText = [
+  const user = [
     '현재 팔레트:',
     list,
     '',
@@ -409,51 +363,26 @@ async function callGeminiPalette(
     '위 char를 전부 그대로, hex만 새 색으로 돌려주세요.',
   ].join('\n')
 
-  const res = await fetch(`${ENDPOINT}/${encodeURIComponent(model)}:generateContent`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: RECOLOR_INSTRUCTION }] },
-      contents: [{ role: 'user', parts: [{ text: userText }] }],
-      generationConfig: {
-        responseMimeType: 'application/json',
-        responseSchema: PALETTE_ONLY_SCHEMA,
-        temperature: 0.7,
-      },
-    }),
-  })
-
-  const bodyText = await res.text()
-  if (!res.ok) {
-    let detail = `HTTP ${res.status}`
-    try {
-      const parsed = JSON.parse(bodyText) as { error?: { message?: string; status?: string } }
-      if (parsed.error?.message) detail = `${parsed.error.status ?? res.status}: ${parsed.error.message}`
-    } catch {
-      detail = `HTTP ${res.status} ${bodyText.slice(0, 200)}`
-    }
-    throw new Error(`Gemini 호출 실패 — ${detail}`)
-  }
-
-  const payload = JSON.parse(bodyText) as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>
-  }
-  const text = payload.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('') ?? ''
-  if (text.trim().length === 0) throw new Error('모델이 빈 응답을 반환했습니다.')
-  const out = JSON.parse(text) as { palette?: Array<{ char?: string; hex?: string }> }
-  return out.palette ?? []
+  const out = await generatePalette(config, RECOLOR_INSTRUCTION, user)
+  return out.palette
 }
 
 async function callGemini(
-  apiKey: string,
-  model: string,
+  config: ServerConfig,
   prompt: string,
   w: number,
   h: number,
   mode: GenerateMode,
   base?: PixelSpec,
-): Promise<RawResult> {
-  const userText =
+): Promise<{ raw: RawResult; retryNote: string | null }> {
+  const system =
+    base === undefined
+      ? SYSTEM_INSTRUCTION
+      : mode === 'add'
+        ? ADD_INSTRUCTION
+        : EDIT_INSTRUCTION
+
+  const user =
     base === undefined
       ? `${w}x${h} 픽셀 아트로 그려주세요: ${prompt}`
       : mode === 'add'
@@ -470,61 +399,16 @@ async function callGemini(
             '요청과 무관한 부분은 그대로 두세요.',
           ].join('\n')
 
-  const res = await fetch(`${ENDPOINT}/${encodeURIComponent(model)}:generateContent`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      // 쿼리스트링이 아니라 헤더로 보낸다. URL은 로그와 히스토리에 남는다.
-      'x-goog-api-key': apiKey,
-    },
-    body: JSON.stringify({
-      systemInstruction: {
-        parts: [
-          {
-            text:
-              base === undefined
-                ? SYSTEM_INSTRUCTION
-                : mode === 'add'
-                  ? ADD_INSTRUCTION
-                  : EDIT_INSTRUCTION,
-          },
-        ],
-      },
-      contents: [{ role: 'user', parts: [{ text: userText }] }],
-      generationConfig: {
-        responseMimeType: 'application/json',
-        responseSchema: RESPONSE_SCHEMA,
-        // 원본을 지켜야 하는 모드는 덜 흔들리게 한다.
-        temperature: base === undefined ? 1 : 0.6,
-      },
-    }),
+  const outcome = await generateGrid({
+    config,
+    system,
+    user,
+    w,
+    h,
+    // 원본을 지켜야 하는 모드는 덜 흔들리게 한다.
+    temperature: base === undefined ? 1 : 0.6,
   })
-
-  const bodyText = await res.text()
-  if (!res.ok) {
-    // 응답 본문에 키가 섞여 돌아오지는 않지만, 그대로 흘리지 않고 요약만 전달한다.
-    let detail = `HTTP ${res.status}`
-    try {
-      const parsed = JSON.parse(bodyText) as { error?: { message?: string; status?: string } }
-      if (parsed.error?.message) detail = `${parsed.error.status ?? res.status}: ${parsed.error.message}`
-    } catch {
-      detail = `HTTP ${res.status} ${bodyText.slice(0, 200)}`
-    }
-    throw new Error(`Gemini 호출 실패 — ${detail}`)
-  }
-
-  const payload = JSON.parse(bodyText) as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>
-    promptFeedback?: { blockReason?: string }
-  }
-  if (payload.promptFeedback?.blockReason) {
-    throw new Error(`요청이 차단되었습니다: ${payload.promptFeedback.blockReason}`)
-  }
-
-  const text = payload.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('') ?? ''
-  if (text.trim().length === 0) throw new Error('모델이 빈 응답을 반환했습니다.')
-
-  return JSON.parse(text) as RawResult
+  return { raw: outcome.result, retryNote: outcome.retryNote }
 }
 
 /** POST /api/generate 와 GET /api/generate (상태 확인). */
@@ -609,13 +493,7 @@ export function createGeminiHandler(config: ServerConfig): ApiHandler {
           send(res, 400, { error: '바꿀 색이 없습니다.' })
           return true
         }
-        const rawPalette = await callGeminiPalette(
-          config.apiKey,
-          config.model,
-          prompt,
-          plan,
-          base,
-        )
+        const rawPalette = await callGeminiPalette(config, prompt, plan, base)
         const { mappings, changed, skipped } = buildRecolorMappings(plan, rawPalette)
         if (changed === 0) {
           send(res, 502, { error: '모델이 바꿀 색을 돌려주지 않았습니다. 요청을 더 구체적으로 적어보세요.' })
@@ -636,9 +514,10 @@ export function createGeminiHandler(config: ServerConfig): ApiHandler {
         return true
       }
 
-      const raw = await callGemini(config.apiKey, config.model, prompt, genW, genH, mode, base)
+      const { raw, retryNote } = await callGemini(config, prompt, genW, genH, mode, base)
       const repaired = repairSpec(raw, genW, genH)
       const warnings = [...repaired.warnings]
+      if (retryNote) warnings.push(retryNote)
 
       let rows = repaired.rows
       if (factor > 1) {

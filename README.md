@@ -214,6 +214,22 @@ npm run mcp:build
 `toSpec`으로 재도출하면 문자가 등장 순서대로 재배정되어, 뒤이은 `patch_rows`가
 자기가 쓴 `k`/`r`를 찾지 못합니다.
 
+### LLM 배관
+
+`server/llm.ts`가 Vercel AI SDK(`ai` + `@ai-sdk/google`)로 호출을 감쌉니다.
+스키마는 zod로 정의하며, MCP 서버가 이미 쓰던 것과 같은 zod를 공유합니다.
+직접 쓰던 fetch/파싱/에러 처리 136줄이 사라지고, 프로바이더 교체는 이 파일
+한 곳만 고치면 됩니다 — `gemini-2.5-flash`가 단종됐을 때 호출 코드를 뒤져야
+했던 일을 피합니다.
+
+**다만 SDK도 "각 행이 정확히 w글자"는 강제하지 못합니다.** JSON 모양만
+보장합니다. 그래서 행 길이·개수를 직접 검증하고, 어긋나면 **무엇이 틀렸는지
+알려주고 한 번 더 묻습니다.** 실측에서 형식 오류 19건이 재요청 후 3건으로
+줄었습니다. 재요청이 더 나빠지면 첫 응답을 씁니다.
+
+토큰 단위로 형식을 강제하는 방법(outlines, xgrammar 같은 문법 제약 디코딩)은
+Gemini HTTP API로 접근할 수 없습니다.
+
 ### 경로 2 — Gemini 프록시
 
 웹 UI에서 프롬프트를 입력하는 방식입니다.
@@ -408,6 +424,7 @@ mcp/
   workspace.ts           spec 파일 IO + 경로 검증
 server/                  Vite를 import하지 않음 — 개발/배포가 같은 코드를 쓴다
   api.ts                 라우터 (개발 서버와 배포 서버가 공유)
+  llm.ts                 AI SDK 배관 + 형식 검증 재요청
   gemini.ts              Gemini 프록시 핸들러 + 응답 보정
   workspaceApi.ts        작업 폴더 API — 에디터와 MCP를 잇는다
   env.ts                 설정 로딩 (.env 직접 파싱)
