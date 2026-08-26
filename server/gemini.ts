@@ -1,6 +1,9 @@
 import type { PixelSpec } from '../src/core/codec'
 import { fromSpec, toSpec, TRANSPARENT_CHAR } from '../src/core/codec'
 import { resample } from '../src/core/resample'
+import { quantize } from '../src/core/quantize'
+import { getPixel, setPixel } from '../src/core/doc'
+import type { PixelDoc } from '../src/core/doc'
 import type { ServerConfig } from './env'
 import type { ApiHandler } from './http'
 import { readBody, send } from './http'
@@ -47,6 +50,26 @@ const EDIT_INSTRUCTION = [
   '- 기존 팔레트 문자를 그대로 재사용하세요. 새 색이 꼭 필요할 때만 추가합니다.',
   '- 원본의 실루엣과 자세를 유지하세요. 요청이 그것을 바꾸라는 것이 아니라면.',
   '- 명암 방향은 원본을 따르세요.',
+  '',
+  'palette의 char는 반드시 한 글자이며, "." 은 투명으로 예약되어 있으니 palette에 넣지 마세요.',
+  'rows는 정확히 h개의 문자열이고, 각 문자열은 정확히 w글자여야 합니다. 글자 수를 세면서 작성하세요.',
+].join('\n')
+
+/**
+ * 추가 모드 지시.
+ *
+ * 수정 모드와 달리 기존 픽셀은 서버가 강제로 지킨다. 모델이 전체를 다시 그려
+ * 보내도 원본이 있는 자리는 무시된다. 그래서 지시도 "빈 자리에만 그려라"로
+ * 좁혀 두는 편이 결과가 낫다.
+ */
+const ADD_INSTRUCTION = [
+  '당신은 픽셀 아트 도터입니다. 이미 있는 그림에 요소를 덧붙입니다.',
+  '',
+  '규칙:',
+  '- 기존 그림은 절대 바꾸지 마세요. 그 자리는 그대로 두고 빈 칸에만 그리세요.',
+  '- 덧붙일 요소만 그리고, 나머지는 전부 "." (투명)으로 두세요.',
+  '- 기존 그림에 자연스럽게 닿도록 위치를 잡으세요. 떠 있으면 안 됩니다.',
+  '- 기존 팔레트와 어울리는 색을 쓰고, 명암 방향도 원본을 따르세요.',
   '',
   'palette의 char는 반드시 한 글자이며, "." 은 투명으로 예약되어 있으니 palette에 넣지 마세요.',
   'rows는 정확히 h개의 문자열이고, 각 문자열은 정확히 w글자여야 합니다. 글자 수를 세면서 작성하세요.',
@@ -138,6 +161,38 @@ export const MAX_MODEL_SIZE = 32
 /** 캔버스 상한. 이 크기까지는 확대로 만들어 준다. */
 export const MAX_CANVAS = 256
 
+/**
+ * 원본 위에 덧붙인 결과를 만든다.
+ *
+ * 원본이 불투명한 자리는 무조건 원본을 쓴다. 모델이 전체를 다시 그려 보내도
+ * 기존 그림은 한 픽셀도 바뀌지 않는다. 지시만으로는 보장이 되지 않으므로
+ * 여기서 코드로 강제한다.
+ */
+export function overlay(base: PixelDoc, addition: PixelDoc): PixelDoc {
+  const out: PixelDoc = { w: base.w, h: base.h, data: new Uint8ClampedArray(base.data) }
+  for (let y = 0; y < base.h; y++) {
+    for (let x = 0; x < base.w; x++) {
+      if (getPixel(base, x, y)[3] !== 0) continue
+      const c = getPixel(addition, x, y)
+      if (c[3] === 0) continue
+      setPixel(out, x, y, c)
+    }
+  }
+  return out
+}
+
+/** 색이 spec 한도를 넘으면 줄여서라도 돌려준다. 여기서 던지면 결과를 통째로 잃는다. */
+export function toSpecSafe(doc: PixelDoc): { spec: PixelSpec; reduced: boolean } {
+  try {
+    return { spec: toSpec(doc), reduced: false }
+  } catch {
+    return {
+      spec: toSpec(quantize(doc, { colors: 56, dither: false, alphaThreshold: 128 })),
+      reduced: true,
+    }
+  }
+}
+
 /** 클라이언트가 보낸 값이므로 모양만 확인하고, 자세한 검증은 fromSpec에 맡긴다. */
 function isSpecLike(v: unknown): v is PixelSpec {
   if (typeof v !== 'object' || v === null) return false
@@ -226,23 +281,33 @@ function describeBase(base: PixelSpec): string {
   ].join('\n')
 }
 
+export type GenerateMode = 'create' | 'edit' | 'add'
+
 async function callGemini(
   apiKey: string,
   model: string,
   prompt: string,
   w: number,
   h: number,
+  mode: GenerateMode,
   base?: PixelSpec,
 ): Promise<RawResult> {
   const userText =
     base === undefined
       ? `${w}x${h} 픽셀 아트로 그려주세요: ${prompt}`
-      : [
-          describeBase(base),
-          '',
-          `위 그림을 ${w}x${h} 크기로 수정해주세요: ${prompt}`,
-          '요청과 무관한 부분은 그대로 두세요.',
-        ].join('\n')
+      : mode === 'add'
+        ? [
+            describeBase(base),
+            '',
+            `위 그림에 덧붙여주세요: ${prompt}`,
+            `${w}x${h} 그리드로, 덧붙일 요소만 그리고 나머지는 "." 으로 두세요.`,
+          ].join('\n')
+        : [
+            describeBase(base),
+            '',
+            `위 그림을 ${w}x${h} 크기로 수정해주세요: ${prompt}`,
+            '요청과 무관한 부분은 그대로 두세요.',
+          ].join('\n')
 
   const res = await fetch(`${ENDPOINT}/${encodeURIComponent(model)}:generateContent`, {
     method: 'POST',
@@ -253,13 +318,22 @@ async function callGemini(
     },
     body: JSON.stringify({
       systemInstruction: {
-        parts: [{ text: base === undefined ? SYSTEM_INSTRUCTION : EDIT_INSTRUCTION }],
+        parts: [
+          {
+            text:
+              base === undefined
+                ? SYSTEM_INSTRUCTION
+                : mode === 'add'
+                  ? ADD_INSTRUCTION
+                  : EDIT_INSTRUCTION,
+          },
+        ],
       },
       contents: [{ role: 'user', parts: [{ text: userText }] }],
       generationConfig: {
         responseMimeType: 'application/json',
         responseSchema: RESPONSE_SCHEMA,
-        // 수정은 원본을 지켜야 하므로 덜 흔들리게 한다.
+        // 원본을 지켜야 하는 모드는 덜 흔들리게 한다.
         temperature: base === undefined ? 1 : 0.6,
       },
     }),
@@ -321,6 +395,7 @@ export function createGeminiHandler(config: ServerConfig): ApiHandler {
         w?: unknown
         h?: unknown
         base?: unknown
+        mode?: unknown
       }
       const prompt = typeof parsed.prompt === 'string' ? parsed.prompt.trim() : ''
       const w = Math.min(MAX_CANVAS, Math.max(8, Number(parsed.w) || 32))
@@ -340,22 +415,30 @@ export function createGeminiHandler(config: ServerConfig): ApiHandler {
       // 큰 캔버스는 모델에게 직접 시키지 않는다. 작게 그리게 하고 정수배로 키운다.
       const { genW, genH, factor } = planGeneration(w, h)
 
-      // 수정 모드: 기존 그림도 같은 크기로 줄여서 보낸다.
+      const mode: GenerateMode =
+        parsed.mode === 'edit' || parsed.mode === 'add' ? parsed.mode : 'create'
+
+      // 수정/추가 모드: 기존 그림도 같은 크기로 줄여서 보낸다.
       // 256px 그리드를 그대로 보내면 65,536자라 모델이 읽지도 못한다.
       let base: PixelSpec | undefined
-      if (isSpecLike(parsed.base)) {
+      let baseDoc: PixelDoc | undefined
+      if (mode !== 'create' && isSpecLike(parsed.base)) {
         try {
-          const doc = fromSpec(parsed.base)
-          base = toSpec(resample(doc, genW, genH, 'nearest'))
+          baseDoc = fromSpec(parsed.base)
+          base = toSpec(resample(baseDoc, genW, genH, 'nearest'))
         } catch (err) {
           send(res, 400, {
-            error: `수정할 그림을 읽을 수 없습니다: ${err instanceof Error ? err.message : String(err)}`,
+            error: `보낸 그림을 읽을 수 없습니다: ${err instanceof Error ? err.message : String(err)}`,
           })
           return true
         }
       }
+      if (mode !== 'create' && base === undefined) {
+        send(res, 400, { error: `${mode === 'add' ? '추가' : '수정'} 모드에는 기존 그림이 필요합니다.` })
+        return true
+      }
 
-      const raw = await callGemini(config.apiKey, config.model, prompt, genW, genH, base)
+      const raw = await callGemini(config.apiKey, config.model, prompt, genW, genH, mode, base)
       const repaired = repairSpec(raw, genW, genH)
       const warnings = [...repaired.warnings]
 
@@ -370,7 +453,19 @@ export function createGeminiHandler(config: ServerConfig): ApiHandler {
         )
       }
 
-      const spec = { w, h, palette: repaired.palette, rows }
+      let spec: PixelSpec = { w, h, palette: repaired.palette, rows }
+
+      if (mode === 'add' && baseDoc !== undefined) {
+        // 원본은 목표 해상도 그대로 쓴다. 축소본을 되키우면 원본이 뭉개진다.
+        const full =
+          baseDoc.w === w && baseDoc.h === h ? baseDoc : resample(baseDoc, w, h, 'nearest')
+        const merged = overlay(full, fromSpec(spec))
+        const safe = toSpecSafe(merged)
+        spec = safe.spec
+        if (safe.reduced) warnings.push('색이 너무 많아 56색으로 줄였습니다.')
+        warnings.push('기존 그림은 그대로 두고 빈 자리에만 덧붙였습니다.')
+      }
+
       send(res, 200, { spec, warnings, model: config.model } satisfies GenerateResponse)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)

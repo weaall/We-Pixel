@@ -795,3 +795,23 @@ label.check input {
 .recolor-foot .swatch {
   cursor: default;
 }
+
+/* 기본 명령어 칩. 프롬프트를 처음부터 쓰지 않아도 되게 한다. */
+.preset-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.preset-chips button {
+  padding: 4px 9px;
+  font-size: 11px;
+  border-radius: 999px;
+  color: var(--muted);
+}
+
+.preset-chips button:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--accent-dim);
+}

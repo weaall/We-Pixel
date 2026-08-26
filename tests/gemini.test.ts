@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { fitRow, MAX_MODEL_SIZE, planGeneration, repairSpec, upscaleRows } from '../server/gemini'
+import {
+  fitRow,
+  MAX_MODEL_SIZE,
+  overlay,
+  planGeneration,
+  repairSpec,
+  toSpecSafe,
+  upscaleRows,
+} from '../server/gemini'
+import { createDoc, getPixel, setPixel } from '../src/core/doc'
+import type { RGBA } from '../src/core/color'
 
 describe('fitRow', () => {
   it('맞는 길이는 건드리지 않는다', () => {
@@ -108,5 +118,73 @@ describe('repairSpec', () => {
 
   it('보정할 것이 없으면 경고도 없다', () => {
     expect(repairSpec({ palette, rows: ['krrk'] }, 4, 1).warnings).toEqual([])
+  })
+})
+
+describe('overlay (추가 모드 보장)', () => {
+  const RED: RGBA = [255, 0, 0, 255]
+  const BLUE: RGBA = [0, 0, 255, 255]
+
+  it('원본이 있는 자리는 절대 바뀌지 않는다', () => {
+    // 모델이 전체를 다시 그려 보내도 기존 그림은 한 픽셀도 안 바뀌어야 한다.
+    // 이것이 지시가 아니라 코드로 주는 보장이다.
+    const base = createDoc(3, 1)
+    setPixel(base, 0, 0, RED)
+
+    const addition = createDoc(3, 1)
+    setPixel(addition, 0, 0, BLUE) // 원본 자리를 덮으려는 시도
+    setPixel(addition, 1, 0, BLUE)
+
+    const out = overlay(base, addition)
+    expect(getPixel(out, 0, 0)).toEqual(RED)
+    expect(getPixel(out, 1, 0)).toEqual(BLUE)
+    expect(getPixel(out, 2, 0)[3]).toBe(0)
+  })
+
+  it('원본을 통째로 덮어써도 원본이 이긴다', () => {
+    const base = createDoc(4, 4)
+    for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) setPixel(base, x, y, RED)
+
+    const addition = createDoc(4, 4)
+    for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) setPixel(addition, x, y, BLUE)
+
+    const out = overlay(base, addition)
+    expect(Array.from(out.data)).toEqual(Array.from(base.data))
+  })
+
+  it('빈 캔버스에는 전부 들어간다', () => {
+    const addition = createDoc(2, 1)
+    setPixel(addition, 0, 0, BLUE)
+    const out = overlay(createDoc(2, 1), addition)
+    expect(getPixel(out, 0, 0)).toEqual(BLUE)
+  })
+
+  it('원본을 훼손하지 않는다', () => {
+    const base = createDoc(2, 1)
+    setPixel(base, 0, 0, RED)
+    const addition = createDoc(2, 1)
+    setPixel(addition, 1, 0, BLUE)
+    overlay(base, addition)
+    expect(getPixel(base, 1, 0)[3]).toBe(0)
+  })
+})
+
+describe('toSpecSafe', () => {
+  it('색이 적으면 그대로 돌려준다', () => {
+    const doc = createDoc(2, 1)
+    setPixel(doc, 0, 0, [255, 0, 0, 255])
+    const out = toSpecSafe(doc)
+    expect(out.reduced).toBe(false)
+  })
+
+  it('색이 한도를 넘으면 줄여서라도 돌려준다', () => {
+    // 여기서 던지면 병합 결과를 통째로 잃는다.
+    const doc = createDoc(16, 16)
+    for (let i = 0; i < 256; i++) {
+      setPixel(doc, i % 16, Math.floor(i / 16), [i, (i * 7) % 256, (i * 13) % 256, 255])
+    }
+    const out = toSpecSafe(doc)
+    expect(out.reduced).toBe(true)
+    expect(Object.keys(out.spec.palette).length).toBeLessThanOrEqual(60)
   })
 })

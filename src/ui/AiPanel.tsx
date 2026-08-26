@@ -19,7 +19,19 @@ interface Status {
   model: string
 }
 
-type Mode = 'create' | 'edit'
+type Mode = 'create' | 'edit' | 'add'
+
+/**
+ * 기본 명령어. 프롬프트를 처음부터 쓰지 않아도 되게 한다.
+ *
+ * 모드마다 다른 것을 제시해야 한다 — "모자 씌우기"는 추가이고
+ * "색을 바꾸기"는 수정이다.
+ */
+const PRESETS: Record<Mode, ReadonlyArray<string>> = {
+  create: ['고블린 전사', '체력 물약', '나무 상자', '돌 블록 타일', '검', '슬라임'],
+  edit: ['몸 색을 빨갛게', '화난 표정으로', '외곽선을 더 어둡게', '명암을 뚜렷하게'],
+  add: ['모자 씌우기', '무기 들려주기', '발밑에 그림자', '망토 달기', '뿔 달기', '눈 추가'],
+}
 
 /** AI 생성 한계. */
 const MAX_AI_SIZE = 256
@@ -87,8 +99,8 @@ export function AiPanel(props: AiPanelProps) {
     setWarnings([])
     setBusy(true)
     try {
-      const body: Record<string, unknown> = { prompt, w: props.width, h: props.height }
-      if (mode === 'edit') body.base = buildBase()
+      const body: Record<string, unknown> = { prompt, w: props.width, h: props.height, mode }
+      if (mode !== 'create') body.base = buildBase()
 
       const res = await fetch('/api/generate', {
         method: 'POST',
@@ -112,7 +124,7 @@ export function AiPanel(props: AiPanelProps) {
     }
   }
 
-  const editUnavailable = mode === 'edit' && empty
+  const editUnavailable = mode !== 'create' && empty
   const disabled =
     busy || prompt.trim().length === 0 || status?.ready === false || tooLarge || editUnavailable
 
@@ -130,9 +142,20 @@ export function AiPanel(props: AiPanelProps) {
         <button className={mode === 'create' ? 'active' : ''} onClick={() => setMode('create')}>
           새로 그리기
         </button>
-        <button className={mode === 'edit' ? 'active' : ''} onClick={() => setMode('edit')}>
-          현재 그림 수정
+        <button className={mode === 'add' ? 'active' : ''} onClick={() => setMode('add')}>
+          덧붙이기
         </button>
+        <button className={mode === 'edit' ? 'active' : ''} onClick={() => setMode('edit')}>
+          고치기
+        </button>
+      </div>
+
+      <div className="preset-chips">
+        {PRESETS[mode].map((text) => (
+          <button key={text} onClick={() => setPrompt(text)} disabled={status?.ready === false}>
+            {text}
+          </button>
+        ))}
       </div>
 
       <textarea
@@ -140,7 +163,9 @@ export function AiPanel(props: AiPanelProps) {
         placeholder={
           mode === 'create'
             ? '그릴 대상을 적으세요.\n예: 초록 고블린 전사, 정면, 손에 곤봉'
-            : '무엇을 바꿀지 적으세요.\n예: 모자를 씌워줘 / 몸을 빨갛게 / 화난 표정으로'
+            : mode === 'add'
+              ? '덧붙일 것을 적으세요.\n예: 모자를 씌워줘 / 손에 검을 들려줘'
+              : '무엇을 바꿀지 적으세요.\n예: 몸을 빨갛게 / 화난 표정으로'
         }
         value={prompt}
         spellCheck={false}
@@ -155,10 +180,8 @@ export function AiPanel(props: AiPanelProps) {
         disabled={disabled}
       >
         {busy
-          ? mode === 'create'
-            ? '그리는 중…'
-            : '고치는 중…'
-          : `${props.width}×${props.height} 로 ${mode === 'create' ? '생성' : '수정'}`}
+          ? { create: '그리는 중…', add: '덧붙이는 중…', edit: '고치는 중…' }[mode]
+          : `${props.width}×${props.height} 로 ${{ create: '생성', add: '덧붙이기', edit: '고치기' }[mode]}`}
       </button>
 
       {status?.ready === false && (
@@ -179,9 +202,11 @@ export function AiPanel(props: AiPanelProps) {
       ))}
       {error && <p className="err">{error}</p>}
       <p className="hint">
-        {mode === 'create'
-          ? '생성하면 현재 캔버스를 덮어씁니다.'
-          : '현재 그림을 모델에게 보내고 받은 결과로 덮어씁니다. 요청과 무관한 부분은 유지하도록 지시하지만, 모델이 다시 그릴 수도 있습니다.'}{' '}
+        {mode === 'create' && '생성하면 현재 캔버스를 덮어씁니다. '}
+        {mode === 'add' &&
+          '기존 그림이 있는 자리는 서버가 그대로 지킵니다. 모델이 전체를 다시 그려 보내도 빈 자리에만 반영됩니다. '}
+        {mode === 'edit' &&
+          '현재 그림을 보내 고칩니다. 유지하도록 지시하지만 모델이 다시 그릴 수도 있습니다 — 원본을 지켜야 하면 덧붙이기를 쓰세요. '}
         되돌리기로 복구할 수 있습니다.
       </p>
     </section>
