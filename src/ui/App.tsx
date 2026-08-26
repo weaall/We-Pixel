@@ -4,7 +4,7 @@ import type { RGBA } from '../core/color'
 import { parseHex } from '../core/color'
 import { usedColors } from '../core/codec'
 import type { PixelDoc } from '../core/doc'
-import { clear, createDoc, MAX_SIZE, MIN_SIZE, resizeDoc } from '../core/doc'
+import { clear, MAX_SIZE, MIN_SIZE, resizeDoc } from '../core/doc'
 import { History } from '../core/history'
 import type { Rect } from '../core/selection'
 import { clearRegion, contentRect, copyRegion, pasteAt } from '../core/selection'
@@ -28,6 +28,15 @@ import { ImportPanel } from './ImportPanel'
 import { LeftRail } from './LeftRail'
 import { Modal } from './Modal'
 import { DEFAULT_PALETTE } from './palette'
+import type { Page } from '../storage/pages'
+import {
+  clearStoredPages,
+  createPage,
+  loadPages,
+  nextPageName,
+  savePages,
+} from '../storage/pages'
+import { PageTabs } from './PageTabs'
 import { PreviewOverlay } from './PreviewOverlay'
 import { RecolorPanel } from './RecolorPanel'
 import { fitZoom, MAX_ZOOM } from './zoom'
@@ -57,7 +66,41 @@ const RIGHT_RAIL: ReadonlyArray<{ id: ModalId; label: string; icon: ComponentTyp
 ]
 
 export function App() {
-  const [doc, setDoc] = useState<PixelDoc>(() => createDoc(32, 32))
+  /**
+   * 페이지 목록. 첫 렌더에서 저장된 것을 복원한다.
+   *
+   * 저장은 spec 기반이라 파일로 내보낸 것과 같은 형식이다.
+   */
+  const [pages, setPages] = useState<Page[]>(() => {
+    const restored = loadPages()
+    if (restored) return restored.pages
+    return [createPage('페이지 1')]
+  })
+  const [activeId, setActiveId] = useState<string>(() => {
+    const restored = loadPages()
+    return restored?.activeId ?? ''
+  })
+
+  useEffect(() => {
+    if (!pages.some((p) => p.id === activeId)) setActiveId(pages[0].id)
+  }, [pages, activeId])
+
+  const active = pages.find((p) => p.id === activeId) ?? pages[0]
+  const doc = active.doc
+
+  /** 문서 교체는 활성 페이지만 바꾼다. */
+  const setDoc = useCallback(
+    (next: PixelDoc | ((prev: PixelDoc) => PixelDoc)) => {
+      setPages((list) =>
+        list.map((p) =>
+          p.id === active.id
+            ? { ...p, doc: typeof next === 'function' ? next(p.doc) : next }
+            : p,
+        ),
+      )
+    },
+    [active.id],
+  )
   const [tool, setTool] = useState<ToolId>('pen')
   const [color, setColor] = useState<RGBA>(() => parseHex('#ef7d57') ?? [255, 255, 255, 255])
   const [stampOptions, setStampOptions] = useState<StampOptions>(defaultStampOptions)
@@ -104,7 +147,19 @@ export function App() {
   /** 모달이 닫혀 있는 동안 떨어진 파일. 모달이 열리면 넘긴다. */
   const droppedFile = useRef<File | null>(null)
 
-  const history = useRef(new History())
+  /**
+   * 되돌리기는 페이지마다 따로 쌓인다.
+   * 하나로 두면 다른 페이지의 작업이 되돌려져 놀란다.
+   */
+  const histories = useRef(new Map<string, History>())
+  const history = { current: (() => {
+    let h = histories.current.get(active.id)
+    if (!h) {
+      h = new History()
+      histories.current.set(active.id, h)
+    }
+    return h
+  })() }
   // History는 ref에 있어 변경이 렌더를 유발하지 않는다. 버튼 활성 상태를 위해 별도로 센다.
   const [histTick, setHistTick] = useState(0)
   const bumpHistory = () => setHistTick((v) => v + 1)
@@ -154,6 +209,49 @@ export function App() {
     },
     [doc],
   )
+
+  const [saveError, setSaveError] = useState<string | null>(null)
+
+  /**
+   * 페이지를 로컬에 저장한다.
+   *
+   * 픽셀을 찍을 때마다 저장하면 큰 캔버스에서 버벅인다. 잠잠해진 뒤 한 번만 쓴다.
+   */
+  useEffect(() => {
+    const id = setTimeout(() => {
+      const result = savePages(pages, active.id)
+      setSaveError(result.ok ? null : (result.reason ?? '저장 실패'))
+    }, 600)
+    return () => clearTimeout(id)
+  }, [pages, active.id])
+
+  const addPage = useCallback(() => {
+    setPages((list) => {
+      const page = createPage(nextPageName(list), doc.w, doc.h)
+      setActiveId(page.id)
+      return [...list, page]
+    })
+  }, [doc.w, doc.h])
+
+  const closePage = useCallback(
+    (id: string) => {
+      setPages((list) => {
+        if (list.length <= 1) return list
+        const index = list.findIndex((p) => p.id === id)
+        const next = list.filter((p) => p.id !== id)
+        histories.current.delete(id)
+        if (id === activeId) setActiveId(next[Math.min(index, next.length - 1)].id)
+        // 마지막 페이지를 닫으면 저장된 것도 없애야 다음에 빈 채로 뜬다.
+        if (next.length === 0) clearStoredPages()
+        return next
+      })
+    },
+    [activeId],
+  )
+
+  const renamePage = useCallback((id: string, name: string) => {
+    setPages((list) => list.map((p) => (p.id === id ? { ...p, name } : p)))
+  }, [])
 
   const copySelection = useCallback(() => {
     if (selection === null) return
@@ -229,10 +327,13 @@ export function App() {
     if (el === null) return
     const cs = getComputedStyle(el)
     const px = (v: string) => parseFloat(v) || 0
-    setStageSize({
-      width: el.clientWidth - px(cs.paddingLeft) - px(cs.paddingRight),
-      height: el.clientHeight - px(cs.paddingTop) - px(cs.paddingBottom),
-    })
+    const width = el.clientWidth - px(cs.paddingLeft) - px(cs.paddingRight)
+    const height = el.clientHeight - px(cs.paddingTop) - px(cs.paddingBottom)
+
+    // 아직 배치되지 않았으면 0이 나온다. 그대로 쓰면 확대율이 1x로 굳고
+    // 관측이 다시 오지 않는 환경에서는 영영 복구되지 않는다.
+    if (width <= 0 || height <= 0) return
+    setStageSize({ width, height })
   }, [])
 
   useEffect(() => {
@@ -240,6 +341,8 @@ export function App() {
     if (el === null) return
 
     measureStage()
+    // 첫 페인트 뒤에 한 번 더 잰다. 마운트 시점에는 아직 0일 수 있다.
+    const raf = requestAnimationFrame(measureStage)
 
     // ResizeObserver가 주 경로지만, 이것만 믿으면 관측이 지연되거나 막힌 환경에서
     // 확대율이 갱신되지 않아 캔버스가 스테이지를 넘친다. window resize로 보강한다.
@@ -247,6 +350,7 @@ export function App() {
     observer.observe(el)
     window.addEventListener('resize', measureStage)
     return () => {
+      cancelAnimationFrame(raf)
       observer.disconnect()
       window.removeEventListener('resize', measureStage)
     }
@@ -450,6 +554,16 @@ export function App() {
           onPaste={pasteClipboard}
         />
 
+        <div className="workspace">
+        <PageTabs
+          pages={pages}
+          activeId={active.id}
+          onSelect={setActiveId}
+          onAdd={addPage}
+          onClose={closePage}
+          onRename={renamePage}
+        />
+
         <main
           className={`stage${stageDragging ? ' drag-over' : ''}`}
           onDragOver={(e) => {
@@ -496,6 +610,8 @@ export function App() {
           {/* 스크롤 영역 밖에 두어야 화면 모서리에 고정된다. */}
           <PreviewOverlay doc={doc} registerRedraw={registerPreviewRedraw} />
 
+          {saveError && <div className="save-error">{saveError}</div>}
+
           <div className="stage-status">
             <span className="brand">
               WE<span>·</span>PIXEL
@@ -507,6 +623,7 @@ export function App() {
             <span ref={hoverLabelRef}>—</span>
           </div>
         </main>
+        </div>
 
         <aside className="rail right">
           {RIGHT_RAIL.map((item) => (

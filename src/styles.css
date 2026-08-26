@@ -815,3 +815,101 @@ label.check input {
   color: var(--text);
   border-color: var(--accent-dim);
 }
+
+/* 페이지 탭 — 스테이지 위에 얇게 얹는다. 캔버스 공간을 최소한만 가져간다. */
+.workspace {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.page-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 4px 6px 0;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  flex: 0 0 auto;
+}
+
+.page-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.page-tab:hover {
+  background: var(--panel-2);
+}
+
+.page-tab.active {
+  background: var(--bg);
+  border-color: var(--line);
+  color: var(--text);
+}
+
+.page-tab input {
+  width: 90px;
+  padding: 1px 4px;
+  font-size: 11px;
+}
+
+.page-size {
+  opacity: 0.6;
+  font-variant-numeric: tabular-nums;
+}
+
+.page-close {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.page-close:hover {
+  background: var(--danger);
+  color: #fff;
+}
+
+.page-add {
+  padding: 4px 10px;
+  border: 1px dashed var(--line);
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1;
+}
+
+/* 저장 실패는 조용히 넘기면 안 된다. 작업이 사라진 줄 모른다. */
+.save-error {
+  position: absolute;
+  left: 12px;
+  bottom: 10px;
+  z-index: 3;
+  padding: 5px 9px;
+  border-radius: 6px;
+  background: rgb(229 101 122 / 15%);
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  font-size: 11px;
+  max-width: 60%;
+}
