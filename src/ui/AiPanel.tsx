@@ -49,6 +49,8 @@ const MAX_BASE_COLORS = 40
 export function AiPanel(props: AiPanelProps) {
   const [mode, setMode] = useState<Mode>('create')
   const [prompt, setPrompt] = useState('')
+  /** 덧붙이기에서 새 요소를 원본 위에 놓을지 뒤에 놓을지. */
+  const [overlayMode, setOverlayMode] = useState<'front' | 'behind'>('front')
   const [status, setStatus] = useState<Status | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -102,6 +104,7 @@ export function AiPanel(props: AiPanelProps) {
     try {
       const body: Record<string, unknown> = { prompt, w: props.width, h: props.height, mode }
       if (mode !== 'create') body.base = buildBase()
+      if (mode === 'add') body.overlay = overlayMode
 
       const res = await fetch('/api/generate', {
         method: 'POST',
@@ -153,6 +156,28 @@ export function AiPanel(props: AiPanelProps) {
           고치기
         </button>
       </div>
+
+      {mode === 'add' && (
+        <div className="row" style={{ marginTop: 8 }}>
+          <label>위치</label>
+          <div className="grow seg">
+            <button
+              className={overlayMode === 'front' ? 'active' : ''}
+              onClick={() => setOverlayMode('front')}
+              title="모자가 머리를 덮는 것처럼, 새 요소가 원본을 가릴 수 있습니다"
+            >
+              원본 위
+            </button>
+            <button
+              className={overlayMode === 'behind' ? 'active' : ''}
+              onClick={() => setOverlayMode('behind')}
+              title="원본을 한 픽셀도 건드리지 않습니다"
+            >
+              원본 뒤
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="preset-chips">
         {PRESETS[mode].map((text) => (
@@ -215,7 +240,9 @@ export function AiPanel(props: AiPanelProps) {
         {mode === 'recolor' &&
           '모델에게 그림이 아니라 색 목록만 받아 기존 픽셀에 적용합니다. 모양은 한 픽셀도 바뀌지 않습니다. '}
         {mode === 'add' &&
-          '기존 그림이 있는 자리는 서버가 그대로 지킵니다. 모델이 전체를 다시 그려 보내도 빈 자리에만 반영됩니다. '}
+          (overlayMode === 'front'
+            ? '새 요소가 원본을 가릴 수 있습니다. 모델이 투명으로 둔 자리는 원본이 그대로 남고, 원본을 60% 넘게 덮으려 하면 다시 그린 것으로 보아 막습니다. '
+            : '원본을 한 픽셀도 건드리지 않습니다. 새 요소는 빈 자리에만 들어가므로 뒤에 놓인 것처럼 보입니다. ')}
         {mode === 'edit' &&
           '현재 그림을 보내 고칩니다. 유지하도록 지시하지만 모델이 다시 그릴 수도 있습니다 — 원본을 지켜야 하면 덧붙이기를 쓰세요. '}
         되돌리기로 복구할 수 있습니다.

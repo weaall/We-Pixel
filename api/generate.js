@@ -35652,8 +35652,10 @@ var ADD_INSTRUCTION = [
   "\uB2F9\uC2E0\uC740 \uD53D\uC140 \uC544\uD2B8 \uB3C4\uD130\uC785\uB2C8\uB2E4. \uC774\uBBF8 \uC788\uB294 \uADF8\uB9BC\uC5D0 \uC694\uC18C\uB97C \uB367\uBD99\uC785\uB2C8\uB2E4.",
   "",
   "\uADDC\uCE59:",
-  "- \uAE30\uC874 \uADF8\uB9BC\uC740 \uC808\uB300 \uBC14\uAFB8\uC9C0 \uB9C8\uC138\uC694. \uADF8 \uC790\uB9AC\uB294 \uADF8\uB300\uB85C \uB450\uACE0 \uBE48 \uCE78\uC5D0\uB9CC \uADF8\uB9AC\uC138\uC694.",
   '- \uB367\uBD99\uC77C \uC694\uC18C\uB9CC \uADF8\uB9AC\uACE0, \uB098\uBA38\uC9C0\uB294 \uC804\uBD80 "." (\uD22C\uBA85)\uC73C\uB85C \uB450\uC138\uC694.',
+  "- \uC694\uC18C\uAC00 \uAE30\uC874 \uADF8\uB9BC\uC744 \uC790\uC5F0\uC2A4\uB7FD\uAC8C \uAC00\uB824\uC57C \uD55C\uB2E4\uBA74 \uADF8 \uBD80\uBD84\uAE4C\uC9C0 \uADF8\uB9AC\uC138\uC694.",
+  "  \uC608: \uBAA8\uC790\uB294 \uBA38\uB9AC \uC717\uBD80\uBD84\uC744 \uB36E\uC2B5\uB2C8\uB2E4. \uBB34\uAE30\uB294 \uC190\uC744 \uAC00\uB9B4 \uC218 \uC788\uC2B5\uB2C8\uB2E4.",
+  "- \uB2E4\uB9CC \uAE30\uC874 \uADF8\uB9BC \uC804\uCCB4\uB97C \uB2E4\uC2DC \uADF8\uB9AC\uC9C0\uB294 \uB9C8\uC138\uC694. \uB367\uBD99\uC77C \uC694\uC18C\uC640 \uADF8\uAC83\uC774 \uAC00\uB9AC\uB294 \uBD80\uBD84\uB9CC\uC785\uB2C8\uB2E4.",
   "- \uAE30\uC874 \uADF8\uB9BC\uC5D0 \uC790\uC5F0\uC2A4\uB7FD\uAC8C \uB2FF\uB3C4\uB85D \uC704\uCE58\uB97C \uC7A1\uC73C\uC138\uC694. \uB5A0 \uC788\uC73C\uBA74 \uC548 \uB429\uB2C8\uB2E4.",
   "- \uAE30\uC874 \uD314\uB808\uD2B8\uC640 \uC5B4\uC6B8\uB9AC\uB294 \uC0C9\uC744 \uC4F0\uACE0, \uBA85\uC554 \uBC29\uD5A5\uB3C4 \uC6D0\uBCF8\uC744 \uB530\uB974\uC138\uC694.",
   "",
@@ -35694,18 +35696,29 @@ function upscaleRows(rows, factor) {
 }
 var MAX_MODEL_SIZE = 32;
 var MAX_CANVAS = 256;
-function overlay(base, addition) {
-  const out = { w: base.w, h: base.h, data: new Uint8ClampedArray(base.data) };
+function overlay(base, addition, mode = "behind") {
+  const doc = { w: base.w, h: base.h, data: new Uint8ClampedArray(base.data) };
+  let added = 0;
+  let covered = 0;
+  let baseOpaque = 0;
   for (let y = 0; y < base.h; y++) {
     for (let x = 0; x < base.w; x++) {
-      if (getPixel(base, x, y)[3] !== 0) continue;
-      const c = getPixel(addition, x, y);
-      if (c[3] === 0) continue;
-      setPixel(out, x, y, c);
+      const under = getPixel(base, x, y);
+      if (under[3] !== 0) baseOpaque++;
+      const over = getPixel(addition, x, y);
+      if (over[3] === 0) continue;
+      if (under[3] === 0) {
+        setPixel(doc, x, y, over);
+        added++;
+      } else if (mode === "front") {
+        setPixel(doc, x, y, over);
+        covered++;
+      }
     }
   }
-  return out;
+  return { doc, added, covered, baseOpaque };
 }
+var REDRAW_RATIO = 0.6;
 function toSpecSafe(doc) {
   try {
     return { spec: toSpec(doc), reduced: false };
@@ -35948,11 +35961,24 @@ function createGeminiHandler(config2) {
       let spec = { w, h, palette: repaired.palette, rows };
       if (mode === "add" && baseDoc !== void 0) {
         const full = baseDoc.w === w && baseDoc.h === h ? baseDoc : resample(baseDoc, w, h, "nearest");
-        const merged = overlay(full, fromSpec(spec));
-        const safe = toSpecSafe(merged);
+        const wanted = parsed.overlay === "behind" ? "behind" : "front";
+        let merged = overlay(full, fromSpec(spec), wanted);
+        const ratio = merged.baseOpaque === 0 ? 0 : merged.covered / merged.baseOpaque;
+        if (wanted === "front" && ratio > REDRAW_RATIO) {
+          merged = overlay(full, fromSpec(spec), "behind");
+          warnings.push(
+            `\uBAA8\uB378\uC774 \uC6D0\uBCF8\uC758 ${Math.round(ratio * 100)}%\uB97C \uB36E\uC73C\uB824 \uD588\uC2B5\uB2C8\uB2E4. \uB367\uBD99\uC774\uAE30\uAC00 \uC544\uB2C8\uB77C \uB2E4\uC2DC \uADF8\uB9B0 \uAC83\uC73C\uB85C \uBCF4\uC544 \uC6D0\uBCF8\uC744 \uC9C0\uCF30\uC2B5\uB2C8\uB2E4.`
+          );
+        } else if (wanted === "front") {
+          warnings.push(
+            merged.covered > 0 ? `${merged.added}\uD53D\uC140\uC744 \uB354\uD558\uACE0 ${merged.covered}\uD53D\uC140\uC744 \uB36E\uC5C8\uC2B5\uB2C8\uB2E4 (\uC6D0\uBCF8 \uC704).` : `${merged.added}\uD53D\uC140\uC744 \uBE48 \uC790\uB9AC\uC5D0 \uB354\uD588\uC2B5\uB2C8\uB2E4.`
+          );
+        } else {
+          warnings.push(`${merged.added}\uD53D\uC140\uC744 \uBE48 \uC790\uB9AC\uC5D0\uB9CC \uB354\uD588\uC2B5\uB2C8\uB2E4. \uC6D0\uBCF8\uC740 \uADF8\uB300\uB85C\uC785\uB2C8\uB2E4.`);
+        }
+        const safe = toSpecSafe(merged.doc);
         spec = safe.spec;
         if (safe.reduced) warnings.push("\uC0C9\uC774 \uB108\uBB34 \uB9CE\uC544 56\uC0C9\uC73C\uB85C \uC904\uC600\uC2B5\uB2C8\uB2E4.");
-        warnings.push("\uAE30\uC874 \uADF8\uB9BC\uC740 \uADF8\uB300\uB85C \uB450\uACE0 \uBE48 \uC790\uB9AC\uC5D0\uB9CC \uB367\uBD99\uC600\uC2B5\uB2C8\uB2E4.");
       }
       send(res, 200, { spec, warnings, model: config2.model });
     } catch (err) {

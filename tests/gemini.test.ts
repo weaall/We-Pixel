@@ -4,6 +4,7 @@ import {
   fitRow,
   MAX_MODEL_SIZE,
   overlay,
+  REDRAW_RATIO,
   planGeneration,
   planRecolor,
   repairSpec,
@@ -125,13 +126,11 @@ describe('repairSpec', () => {
   })
 })
 
-describe('overlay (추가 모드 보장)', () => {
+describe('overlay (덧붙이기)', () => {
   const RED: RGBA = [255, 0, 0, 255]
   const BLUE: RGBA = [0, 0, 255, 255]
 
-  it('원본이 있는 자리는 절대 바뀌지 않는다', () => {
-    // 모델이 전체를 다시 그려 보내도 기존 그림은 한 픽셀도 안 바뀌어야 한다.
-    // 이것이 지시가 아니라 코드로 주는 보장이다.
+  it('behind: 원본이 있는 자리는 절대 바뀌지 않는다', () => {
     const base = createDoc(3, 1)
     setPixel(base, 0, 0, RED)
 
@@ -139,37 +138,82 @@ describe('overlay (추가 모드 보장)', () => {
     setPixel(addition, 0, 0, BLUE) // 원본 자리를 덮으려는 시도
     setPixel(addition, 1, 0, BLUE)
 
-    const out = overlay(base, addition)
-    expect(getPixel(out, 0, 0)).toEqual(RED)
-    expect(getPixel(out, 1, 0)).toEqual(BLUE)
-    expect(getPixel(out, 2, 0)[3]).toBe(0)
+    const out = overlay(base, addition, 'behind')
+    expect(getPixel(out.doc, 0, 0)).toEqual(RED)
+    expect(getPixel(out.doc, 1, 0)).toEqual(BLUE)
+    expect(out.added).toBe(1)
+    expect(out.covered).toBe(0)
   })
 
-  it('원본을 통째로 덮어써도 원본이 이긴다', () => {
+  it('behind: 원본을 통째로 덮어써도 원본이 이긴다', () => {
     const base = createDoc(4, 4)
     for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) setPixel(base, x, y, RED)
-
     const addition = createDoc(4, 4)
     for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) setPixel(addition, x, y, BLUE)
 
-    const out = overlay(base, addition)
-    expect(Array.from(out.data)).toEqual(Array.from(base.data))
+    expect(Array.from(overlay(base, addition, 'behind').doc.data)).toEqual(Array.from(base.data))
   })
 
-  it('빈 캔버스에는 전부 들어간다', () => {
+  it('front: 그린 자리는 덮고 투명한 자리는 원본을 남긴다', () => {
+    // 모자가 머리를 가려야 하는 경우. behind 로는 표현할 수 없다.
+    const base = createDoc(3, 1)
+    setPixel(base, 0, 0, RED)
+    setPixel(base, 1, 0, RED)
+
+    const addition = createDoc(3, 1)
+    setPixel(addition, 0, 0, BLUE) // 원본을 가린다
+
+    const out = overlay(base, addition, 'front')
+    expect(getPixel(out.doc, 0, 0)).toEqual(BLUE)
+    expect(getPixel(out.doc, 1, 0)).toEqual(RED) // 모델이 투명으로 둔 자리
+    expect(out.covered).toBe(1)
+  })
+
+  it('front: 덮은 비율을 보고해 덮어쓰기를 판별할 수 있다', () => {
+    const base = createDoc(4, 4)
+    for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) setPixel(base, x, y, RED)
+    const addition = createDoc(4, 4)
+    for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) setPixel(addition, x, y, BLUE)
+
+    const out = overlay(base, addition, 'front')
+    expect(out.covered / out.baseOpaque).toBe(1)
+    expect(out.covered / out.baseOpaque).toBeGreaterThan(REDRAW_RATIO)
+  })
+
+  it('front: 살짝 겹치는 것은 덮어쓰기로 보지 않는다', () => {
+    const base = createDoc(10, 1)
+    for (let x = 0; x < 10; x++) setPixel(base, x, 0, RED)
+    const addition = createDoc(10, 1)
+    setPixel(addition, 0, 0, BLUE)
+    setPixel(addition, 1, 0, BLUE)
+
+    const out = overlay(base, addition, 'front')
+    expect(out.covered / out.baseOpaque).toBeLessThan(REDRAW_RATIO)
+  })
+
+  it('빈 캔버스에는 두 모드 모두 전부 들어간다', () => {
     const addition = createDoc(2, 1)
     setPixel(addition, 0, 0, BLUE)
-    const out = overlay(createDoc(2, 1), addition)
-    expect(getPixel(out, 0, 0)).toEqual(BLUE)
+    for (const mode of ['front', 'behind'] as const) {
+      expect(getPixel(overlay(createDoc(2, 1), addition, mode).doc, 0, 0)).toEqual(BLUE)
+    }
   })
 
   it('원본을 훼손하지 않는다', () => {
     const base = createDoc(2, 1)
     setPixel(base, 0, 0, RED)
     const addition = createDoc(2, 1)
-    setPixel(addition, 1, 0, BLUE)
-    overlay(base, addition)
-    expect(getPixel(base, 1, 0)[3]).toBe(0)
+    setPixel(addition, 0, 0, BLUE)
+    overlay(base, addition, 'front')
+    expect(getPixel(base, 0, 0)).toEqual(RED)
+  })
+
+  it('기본값은 behind 다', () => {
+    const base = createDoc(1, 1)
+    setPixel(base, 0, 0, RED)
+    const addition = createDoc(1, 1)
+    setPixel(addition, 0, 0, BLUE)
+    expect(getPixel(overlay(base, addition).doc, 0, 0)).toEqual(RED)
   })
 })
 

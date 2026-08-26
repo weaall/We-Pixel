@@ -70,8 +70,10 @@ const ADD_INSTRUCTION = [
   '당신은 픽셀 아트 도터입니다. 이미 있는 그림에 요소를 덧붙입니다.',
   '',
   '규칙:',
-  '- 기존 그림은 절대 바꾸지 마세요. 그 자리는 그대로 두고 빈 칸에만 그리세요.',
   '- 덧붙일 요소만 그리고, 나머지는 전부 "." (투명)으로 두세요.',
+  '- 요소가 기존 그림을 자연스럽게 가려야 한다면 그 부분까지 그리세요.',
+  '  예: 모자는 머리 윗부분을 덮습니다. 무기는 손을 가릴 수 있습니다.',
+  '- 다만 기존 그림 전체를 다시 그리지는 마세요. 덧붙일 요소와 그것이 가리는 부분만입니다.',
   '- 기존 그림에 자연스럽게 닿도록 위치를 잡으세요. 떠 있으면 안 됩니다.',
   '- 기존 팔레트와 어울리는 색을 쓰고, 명암 방향도 원본을 따르세요.',
   '',
@@ -160,25 +162,65 @@ export const MAX_MODEL_SIZE = 32
 /** 캔버스 상한. 이 크기까지는 확대로 만들어 준다. */
 export const MAX_CANVAS = 256
 
+export type OverlayMode = 'front' | 'behind'
+
+export interface OverlayResult {
+  doc: PixelDoc
+  /** 빈 자리에 새로 그려진 픽셀 수. */
+  added: number
+  /** 원본을 덮은 픽셀 수. behind 모드에서는 항상 0. */
+  covered: number
+  /** 원본의 불투명 픽셀 수. 덮은 비율을 판단하는 기준. */
+  baseOpaque: number
+}
+
 /**
- * 원본 위에 덧붙인 결과를 만든다.
+ * 원본에 덧붙인 결과를 만든다.
  *
- * 원본이 불투명한 자리는 무조건 원본을 쓴다. 모델이 전체를 다시 그려 보내도
- * 기존 그림은 한 픽셀도 바뀌지 않는다. 지시만으로는 보장이 되지 않으므로
- * 여기서 코드로 강제한다.
+ * - behind : 원본이 있는 자리는 무조건 원본. 100% 보존되지만 새 요소가 뒤에
+ *            끼워진 것처럼 보인다. 모자가 머리를 덮을 수 없다.
+ * - front  : 모델이 그린 자리만 덮는다. 모델은 덧붙일 요소만 그리고 나머지를
+ *            투명으로 두도록 지시받으므로, 원본은 그 요소가 가리는 부분만 바뀐다.
+ *
+ * front 도 통째로 다시 그리는 것과는 다르다. 모델이 투명으로 둔 자리는
+ * 원본이 그대로 남는다. 다만 모델이 전체를 칠해 보내면 사실상 덮어쓰기가 되므로,
+ * 호출자가 covered 비율을 보고 판단해야 한다.
  */
-export function overlay(base: PixelDoc, addition: PixelDoc): PixelDoc {
-  const out: PixelDoc = { w: base.w, h: base.h, data: new Uint8ClampedArray(base.data) }
+export function overlay(
+  base: PixelDoc,
+  addition: PixelDoc,
+  mode: OverlayMode = 'behind',
+): OverlayResult {
+  const doc: PixelDoc = { w: base.w, h: base.h, data: new Uint8ClampedArray(base.data) }
+  let added = 0
+  let covered = 0
+  let baseOpaque = 0
+
   for (let y = 0; y < base.h; y++) {
     for (let x = 0; x < base.w; x++) {
-      if (getPixel(base, x, y)[3] !== 0) continue
-      const c = getPixel(addition, x, y)
-      if (c[3] === 0) continue
-      setPixel(out, x, y, c)
+      const under = getPixel(base, x, y)
+      if (under[3] !== 0) baseOpaque++
+
+      const over = getPixel(addition, x, y)
+      if (over[3] === 0) continue
+
+      if (under[3] === 0) {
+        setPixel(doc, x, y, over)
+        added++
+      } else if (mode === 'front') {
+        setPixel(doc, x, y, over)
+        covered++
+      }
     }
   }
-  return out
+  return { doc, added, covered, baseOpaque }
 }
+
+/**
+ * 덮은 비율이 이 값을 넘으면 덧붙이기가 아니라 다시 그린 것으로 본다.
+ * 그때는 behind 로 물러나 원본을 지킨다.
+ */
+export const REDRAW_RATIO = 0.6
 
 /** 색이 spec 한도를 넘으면 줄여서라도 돌려준다. 여기서 던지면 결과를 통째로 잃는다. */
 export function toSpecSafe(doc: PixelDoc): { spec: PixelSpec; reduced: boolean } {
@@ -441,6 +483,7 @@ export function createGeminiHandler(config: ServerConfig): ApiHandler {
         h?: unknown
         base?: unknown
         mode?: unknown
+        overlay?: unknown
       }
       const prompt = typeof parsed.prompt === 'string' ? parsed.prompt.trim() : ''
       const w = Math.min(MAX_CANVAS, Math.max(8, Number(parsed.w) || 32))
@@ -536,11 +579,30 @@ export function createGeminiHandler(config: ServerConfig): ApiHandler {
         // 원본은 목표 해상도 그대로 쓴다. 축소본을 되키우면 원본이 뭉개진다.
         const full =
           baseDoc.w === w && baseDoc.h === h ? baseDoc : resample(baseDoc, w, h, 'nearest')
-        const merged = overlay(full, fromSpec(spec))
-        const safe = toSpecSafe(merged)
+
+        const wanted: OverlayMode = parsed.overlay === 'behind' ? 'behind' : 'front'
+        let merged = overlay(full, fromSpec(spec), wanted)
+
+        // 모델이 전체를 칠해 보내면 덧붙이기가 아니라 덮어쓰기다. 원본을 지킨다.
+        const ratio = merged.baseOpaque === 0 ? 0 : merged.covered / merged.baseOpaque
+        if (wanted === 'front' && ratio > REDRAW_RATIO) {
+          merged = overlay(full, fromSpec(spec), 'behind')
+          warnings.push(
+            `모델이 원본의 ${Math.round(ratio * 100)}%를 덮으려 했습니다. 덧붙이기가 아니라 다시 그린 것으로 보아 원본을 지켰습니다.`,
+          )
+        } else if (wanted === 'front') {
+          warnings.push(
+            merged.covered > 0
+              ? `${merged.added}픽셀을 더하고 ${merged.covered}픽셀을 덮었습니다 (원본 위).`
+              : `${merged.added}픽셀을 빈 자리에 더했습니다.`,
+          )
+        } else {
+          warnings.push(`${merged.added}픽셀을 빈 자리에만 더했습니다. 원본은 그대로입니다.`)
+        }
+
+        const safe = toSpecSafe(merged.doc)
         spec = safe.spec
         if (safe.reduced) warnings.push('색이 너무 많아 56색으로 줄였습니다.')
-        warnings.push('기존 그림은 그대로 두고 빈 자리에만 덧붙였습니다.')
       }
 
       send(res, 200, { spec, warnings, model: config.model } satisfies GenerateResponse)
