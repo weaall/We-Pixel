@@ -136,3 +136,12 @@ export function nextPageName(existing: ReadonlyArray<Page>, prefix = '페이지'
     if (!existing.some((p) => p.name === name)) return name
   }
 }
+
+/** 주어진 이름을 그대로 쓰되, 겹치면 뒤에 번호를 붙인다. */
+export function uniqueName(existing: ReadonlyArray<Page>, name: string): string {
+  if (!existing.some((p) => p.name === name)) return name
+  for (let n = 2; ; n++) {
+    const candidate = `${name} ${n}`
+    if (!existing.some((p) => p.name === candidate)) return candidate
+  }
+}

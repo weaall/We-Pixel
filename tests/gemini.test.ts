@@ -11,6 +11,8 @@ import {
   toSpecSafe,
   upscaleRows,
 } from '../server/gemini'
+import { packRows, toSpec } from '../src/core/codec'
+import type { PixelDoc } from '../src/core/doc'
 import { createDoc, getPixel, setPixel } from '../src/core/doc'
 import { replaceColors } from '../src/core/recolor'
 import { findRowProblems } from '../server/llm'
@@ -350,5 +352,70 @@ describe('행 형식 검증 (재요청 판단)', () => {
     const problems = findRowProblems(['abc', 'abcd'], 4, 3)
     expect(problems.filter((p) => p.index !== -1).length).toBe(1)
     expect(problems.some((p) => p.index === -1)).toBe(true)
+  })
+})
+
+describe('가상 생성 (프레임 고정, 배색만 교체)', () => {
+  /** 밝은 면 / 그늘 / 외곽선이 있는 작은 주사위 꼴. */
+  function sample(): PixelDoc {
+    const doc = createDoc(4, 4)
+    setPixel(doc, 1, 1, [230, 80, 0, 255])
+    setPixel(doc, 2, 1, [230, 80, 0, 255])
+    setPixel(doc, 1, 2, [112, 18, 18, 255])
+    setPixel(doc, 2, 2, [35, 9, 7, 255])
+    return doc
+  }
+
+  it('모델이 돌려준 배색을 입혀도 프레임이 그대로다', () => {
+    const doc = sample()
+    const plan = planRecolor(doc)
+    const before = toSpec(doc).rows.join('')
+
+    // 모델 응답을 흉내 낸다. 실제 호출 없이 조립 부분만 확인한다.
+    const answer = plan.chars.map((char, i) => ({
+      char,
+      hex: ['#0055ff', '#003399', '#001133'][i] ?? '#123456',
+    }))
+    const { mappings, changed, skipped } = buildRecolorMappings(plan, answer)
+    expect(changed).toBe(plan.chars.length)
+    expect(skipped).toBe(0)
+
+    const out = replaceColors(doc, mappings, 0).doc
+    expect(toSpec(out).rows.join('')).toBe(before)
+  })
+
+  it('모델이 char를 빠뜨려도 그 색은 원래대로 남는다', () => {
+    // 빠뜨린 색을 투명이나 검정으로 만들면 그림에 구멍이 뚫린다.
+    const doc = sample()
+    const plan = planRecolor(doc)
+    const partial = [{ char: plan.chars[0], hex: '#0055ff' }]
+    const { mappings, skipped } = buildRecolorMappings(plan, partial)
+    expect(skipped).toBe(plan.chars.length - 1)
+
+    const out = replaceColors(doc, mappings, 0).doc
+    expect(toSpec(out).rows.join('')).toBe(toSpec(doc).rows.join(''))
+    // 빠뜨린 색 자리는 원본 색 그대로다.
+    expect(getPixel(out, 2, 2)).toEqual([35, 9, 7, 255])
+  })
+
+  it('모델이 엉뚱한 char를 지어내도 무시한다', () => {
+    const doc = sample()
+    const plan = planRecolor(doc)
+    const { changed } = buildRecolorMappings(plan, [
+      { char: 'Z', hex: '#0055ff' },
+      { char: 'ZZ', hex: '#0055ff' },
+      { char: plan.chars[0], hex: 'not-a-hex' },
+    ])
+    expect(changed).toBe(0)
+  })
+
+  it('보내는 형태는 접힌 표기다', () => {
+    // 60% 짧아지고, 모델이 글자를 셀 일이 없어진다.
+    const doc = createDoc(16, 2)
+    for (let x = 0; x < 16; x++) setPixel(doc, x, 0, [255, 0, 0, 255])
+    const spec = toSpec(doc)
+    const packed = packRows(spec)
+    expect(packed[0]).toBe('a~16')
+    expect(packed.join('').length).toBeLessThan(spec.rows.join('').length)
   })
 })

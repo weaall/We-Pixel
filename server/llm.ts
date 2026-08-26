@@ -27,6 +27,22 @@ export const paletteSchema = z.object({
     .describe('받은 것과 같은 char 목록. 각 hex만 새 색으로.'),
 })
 
+/** 한 번에 여러 벌. 이름이 있어야 어느 것이 무엇인지 페이지 탭에서 구분된다. */
+export const paletteSetSchema = z.object({
+  variants: z
+    .array(
+      z.object({
+        name: z.string().describe('짧은 이름. 예: 불꽃, 얼음, 독'),
+        palette: z
+          .array(z.object({ char: z.string(), hex: z.string() }))
+          .describe('받은 것과 같은 char 목록. 각 hex만 새 색으로.'),
+      }),
+    )
+    .describe('요청한 개수만큼의 배색.'),
+})
+
+export type PaletteSetResult = z.infer<typeof paletteSetSchema>
+
 export type GridResult = z.infer<typeof gridSchema>
 export type PaletteResult = z.infer<typeof paletteSchema>
 
@@ -154,6 +170,33 @@ export async function generatePalette(
       system,
       prompt: user,
       temperature: 0.7,
+    })
+    return out.object
+  } catch (err) {
+    throw new Error(describeError(err))
+  }
+}
+
+/**
+ * 여러 벌의 배색을 한 번에 받는다.
+ *
+ * 그리드를 아예 요청하지 않는 것이 핵심이다. 모델에게 그림을 그리게 하면
+ * "색만 바꿔줘"라고 해도 형태가 같이 바뀐다. 스키마에 rows 가 없으면
+ * 형태가 유지되는 것이 부탁이 아니라 구조가 된다.
+ */
+export async function generatePaletteSet(
+  config: ServerConfig,
+  system: string,
+  user: string,
+): Promise<PaletteSetResult> {
+  try {
+    const out = await generateObject({
+      model: model(config),
+      schema: paletteSetSchema,
+      system,
+      prompt: user,
+      // 배색은 다양하게 나오는 편이 쓸모 있다. 형태는 어차피 잠겨 있다.
+      temperature: 0.9,
     })
     return out.object
   } catch (err) {

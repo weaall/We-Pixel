@@ -2,7 +2,7 @@ import type { PixelSpec } from '../src/core/codec'
 import { fromSpec, toSpec, TRANSPARENT_CHAR } from '../src/core/codec'
 import { resample } from '../src/core/resample'
 import { quantize } from '../src/core/quantize'
-import { usedColors } from '../src/core/codec'
+import { packRows, usedColors } from '../src/core/codec'
 import { parseHex } from '../src/core/color'
 import type { RGBA } from '../src/core/color'
 import { replaceColors } from '../src/core/recolor'
@@ -10,7 +10,8 @@ import type { PixelDoc } from '../src/core/doc'
 import type { CompositeMode, CompositeResult } from '../src/core/compose'
 import { composite } from '../src/core/compose'
 import type { ServerConfig } from './env'
-import { generateGrid, generatePalette } from './llm'
+import type { PaletteSetResult } from './llm'
+import { generateGrid, generatePalette, generatePaletteSet } from './llm'
 import type { ApiHandler } from './http'
 import { readBody, send } from './http'
 
@@ -102,9 +103,37 @@ const RECOLOR_INSTRUCTION = [
   '- hex는 "#rrggbb" 형식입니다.',
 ].join('\n')
 
+const VIRTUAL_INSTRUCTION = [
+  '당신은 이미 그려진 픽셀 아트에 새 배색을 입히는 사람입니다.',
+  '',
+  '형태는 이미 정해져 있고 바꿀 수 없습니다. 당신이 정하는 것은 색뿐입니다.',
+  '',
+  '규칙:',
+  '- 그림을 그리지 마세요. 배색 목록만 돌려줍니다.',
+  '- 받은 char를 하나도 빠짐없이, 그대로 돌려주세요. 새 char를 만들지 마세요.',
+  '- 명암 관계를 유지하세요. 원본에서 어두웠던 색은 새 배합에서도 어두워야 합니다.',
+  '  이것이 깨지면 입체감이 사라져 그림이 납작해 보입니다.',
+  '- 각 벌은 서로 뚜렷하게 달라야 합니다. 같은 색조를 조금씩 민 것은 쓸모가 없습니다.',
+  '- hex는 "#rrggbb" 형식입니다.',
+  '',
+  '그림은 반복을 접은 표기로 줍니다. "a~10" 은 a가 10칸 이어진다는 뜻입니다.',
+  '어느 char가 넓은 면이고 어느 char가 좁은 장식인지 여기서 읽어내세요.',
+].join('\n')
+
 export interface RawResult {
   palette?: Array<{ char?: string; hex?: string }>
   rows?: string[]
+}
+
+export interface VirtualVariant {
+  name: string
+  spec: PixelSpec
+}
+
+export interface VirtualResponse {
+  variants: VirtualVariant[]
+  warnings: string[]
+  model: string
 }
 
 export interface GenerateResponse {
@@ -345,7 +374,7 @@ function describeBase(base: PixelSpec): string {
   ].join('\n')
 }
 
-export type GenerateMode = 'create' | 'edit' | 'add' | 'recolor'
+export type GenerateMode = 'create' | 'edit' | 'add' | 'recolor' | 'virtual'
 
 /** 팔레트만 받아온다. 그리드를 요청하지 않으므로 모양이 바뀔 수 없다. */
 async function callGeminiPalette(
@@ -369,6 +398,34 @@ async function callGeminiPalette(
 
   const out = await generatePalette(config, RECOLOR_INSTRUCTION, user)
   return out.palette
+}
+
+/** 한 번에 만들 벌 수 상한. 넘으면 배색이 서로 비슷해지고 응답도 길어진다. */
+const MAX_VIRTUAL = 8
+
+async function callGeminiPaletteSet(
+  config: ServerConfig,
+  prompt: string,
+  plan: RecolorPlan,
+  preview: PixelSpec,
+  count: number,
+): Promise<PaletteSetResult['variants']> {
+  const list = plan.chars.map((c, i) => `  "${c}": "${plan.hexes[i]}"`).join('\n')
+  // 접어서 보낸다. 60% 짧아지고, 모델이 글자를 셀 일이 없어진다.
+  const rows = packRows(preview)
+  const user = [
+    '현재 팔레트:',
+    list,
+    '',
+    `형태 (${preview.w}x${preview.h}, 반복을 접은 표기):`,
+    ...rows,
+    '',
+    `요청: ${prompt}`,
+    `위 char를 전부 그대로 쓰는 배색을 ${count}벌 만들어 주세요.`,
+  ].join('\n')
+
+  const out = await generatePaletteSet(config, VIRTUAL_INSTRUCTION, user)
+  return out.variants
 }
 
 async function callGemini(
@@ -444,6 +501,7 @@ export function createGeminiHandler(config: ServerConfig): ApiHandler {
         w?: unknown
         h?: unknown
         base?: unknown
+        count?: unknown
         mode?: unknown
         overlay?: unknown
       }
@@ -466,7 +524,10 @@ export function createGeminiHandler(config: ServerConfig): ApiHandler {
       const { genW, genH, factor } = planGeneration(w, h)
 
       const mode: GenerateMode =
-        parsed.mode === 'edit' || parsed.mode === 'add' || parsed.mode === 'recolor'
+        parsed.mode === 'edit' ||
+        parsed.mode === 'add' ||
+        parsed.mode === 'recolor' ||
+        parsed.mode === 'virtual'
           ? parsed.mode
           : 'create'
 
@@ -487,6 +548,48 @@ export function createGeminiHandler(config: ServerConfig): ApiHandler {
       }
       if (mode !== 'create' && base === undefined) {
         send(res, 400, { error: '이 모드에는 기존 그림이 필요합니다.' })
+        return true
+      }
+
+      // 프레임을 잠그고 배색만 여러 벌 받는다.
+      // 모델에게는 형태를 돌려줄 방법 자체가 없다 — 스키마에 rows 가 없다.
+      if (mode === 'virtual' && baseDoc !== undefined && base !== undefined) {
+        const plan = planRecolor(baseDoc)
+        if (plan.chars.length === 0) {
+          send(res, 400, { error: '캔버스가 비어 있어 배색을 만들 수 없습니다.' })
+          return true
+        }
+        const count = Math.min(MAX_VIRTUAL, Math.max(1, Number(parsed.count) || 4))
+        const raw = await callGeminiPaletteSet(config, prompt, plan, base, count)
+
+        const variants: VirtualVariant[] = []
+        const notes: string[] = []
+        for (const entry of raw.slice(0, count)) {
+          const { mappings, changed, skipped } = buildRecolorMappings(plan, entry.palette ?? [])
+          // 하나도 못 바꾼 벌은 원본과 같다. 페이지만 늘리고 쓸모가 없다.
+          if (changed === 0) continue
+          const safe = toSpecSafe(replaceColors(baseDoc, mappings, 0).doc)
+          variants.push({ name: (entry.name ?? '').trim() || `배색 ${variants.length + 1}`, spec: safe.spec })
+          if (skipped > 0) {
+            notes.push(`"${entry.name}"에서 ${skipped}개 색은 모델이 빠뜨려 원래 값을 유지했습니다.`)
+          }
+        }
+
+        if (variants.length === 0) {
+          send(res, 502, {
+            error: '모델이 쓸 만한 배색을 돌려주지 않았습니다. 요청을 더 구체적으로 적어보세요.',
+          })
+          return true
+        }
+        if (variants.length < count) {
+          notes.unshift(`${count}벌 중 ${variants.length}벌만 쓸 수 있었습니다.`)
+        }
+
+        send(res, 200, {
+          variants,
+          warnings: notes,
+          model: config.model,
+        } satisfies VirtualResponse)
         return true
       }
 

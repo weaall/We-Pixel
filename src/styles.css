@@ -964,3 +964,8 @@ label.check input {
   font-size: 11px;
   color: var(--muted);
 }
+
+/* 오류는 힌트와 같은 자리에 뜨지만 색으로 구분되어야 놓치지 않는다. */
+.hint.error {
+  color: var(--danger);
+}

@@ -67,6 +67,90 @@ export function toSpec(doc: PixelDoc): PixelSpec {
   return { w: doc.w, h: doc.h, palette, rows }
 }
 
+/**
+ * 반복을 접는 표기의 구분자. ALPHABET 에도 TRANSPARENT_CHAR 에도 없는 글자여야
+ * 팔레트 문자와 헷갈리지 않는다.
+ */
+const RUN = '~'
+
+/**
+ * 3개까지는 접어도 짧아지지 않는다. "eee" 와 "e~3" 은 둘 다 3자다.
+ */
+const MIN_RUN = 4
+
+/**
+ * 숫자가 팔레트 문자로 쓰이면 개수와 구분할 수 없다.
+ *
+ * toSpec 은 알파벳 52자를 먼저 쓰므로 색이 53종을 넘어야 숫자가 나온다.
+ * 픽셀 아트에서 실제로 일어나는 일은 아니지만, 일어나면 조용히 틀리는 대신
+ * 접기를 포기해야 한다.
+ */
+export function canPackRows(palette: Record<string, string>): boolean {
+  return !Object.keys(palette).some((ch) => /[0-9~]/.test(ch))
+}
+
+/**
+ * 한 행의 반복을 접는다. "..........aab" -> ".~10aab"
+ *
+ * 토큰만 줄이는 것이 아니다. LLM 은 글자를 세지 못한다 — 같은 글자를 28번
+ * 적으라고 하면 27번이나 29번을 적는다. 개수를 숫자로 적게 하면 셀 일이 없고,
+ * 펼칠 때 합이 w 와 맞는지 확인할 수 있어 틀린 줄이 조용히 지나가지 않는다.
+ */
+export function packRow(row: string): string {
+  let out = ''
+  for (let i = 0; i < row.length; ) {
+    let j = i
+    while (j < row.length && row[j] === row[i]) j++
+    const n = j - i
+    out += n >= MIN_RUN ? `${row[i]}${RUN}${n}` : row[i].repeat(n)
+    i = j
+  }
+  return out
+}
+
+/** 접힌 행을 펼친다. 길이가 w 와 다르면 Error — 여기서 잡아야 그림이 밀리지 않는다. */
+export function unpackRow(packed: string, w: number): string {
+  let out = ''
+  for (let i = 0; i < packed.length; ) {
+    const ch = packed[i]
+    if (ch === RUN) throw new Error(`${RUN} 앞에 문자가 없습니다: "${packed}"`)
+    i++
+    if (packed[i] === RUN) {
+      i++
+      let digits = ''
+      while (i < packed.length && packed[i] >= '0' && packed[i] <= '9') digits += packed[i++]
+      if (digits === '') throw new Error(`${RUN} 뒤에 개수가 없습니다: "${packed}"`)
+      const n = Number(digits)
+      // 여기서 막지 않으면 잘못된 개수 하나가 메모리를 통째로 먹는다.
+      if (out.length + n > w) {
+        throw new Error(`행이 w(${w})를 넘습니다: "${packed}"`)
+      }
+      out += ch.repeat(n)
+    } else {
+      out += ch
+    }
+  }
+  if (out.length !== w) {
+    throw new Error(`행 길이가 ${out.length}인데 w는 ${w}입니다: "${packed}"`)
+  }
+  return out
+}
+
+export function packRows(spec: PixelSpec): string[] {
+  if (!canPackRows(spec.palette)) throw new Error('팔레트가 숫자를 써서 접을 수 없습니다')
+  return spec.rows.map(packRow)
+}
+
+export function unpackRows(packed: ReadonlyArray<string>, w: number): string[] {
+  return packed.map((row, i) => {
+    try {
+      return unpackRow(row, w)
+    } catch (err) {
+      throw new Error(`${i}번 행: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  })
+}
+
 /** spec을 문서로 복원. 형식이 어긋나면 Error. */
 export function fromSpec(spec: PixelSpec): PixelDoc {
   if (!Number.isInteger(spec.w) || !Number.isInteger(spec.h) || spec.w < 1 || spec.h < 1) {

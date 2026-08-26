@@ -36,6 +36,7 @@ import {
   newPageId,
   nextPageName,
   savePages,
+  uniqueName,
 } from '../storage/pages'
 import { PageTabs } from './PageTabs'
 import { PreviewOverlay } from './PreviewOverlay'
@@ -240,15 +241,25 @@ export function App() {
    * 이름을 미리 다 짓지 않고 하나씩 붙여 나간다. 같은 목록을 보고 지으면
    * 넷 다 같은 이름이 된다.
    */
-  const addPages = useCallback((docs: ReadonlyArray<PixelDoc>, prefix = '변형') => {
-    if (docs.length === 0) return
-    setPages((list) => {
-      const next = [...list]
-      for (const d of docs) next.push({ id: newPageId(), name: nextPageName(next, prefix), doc: d })
-      setActiveId(next[list.length].id)
-      return next
-    })
-  }, [])
+  const addPages = useCallback(
+    (docs: ReadonlyArray<PixelDoc>, prefix = '변형', names?: ReadonlyArray<string>) => {
+      if (docs.length === 0) return
+      setPages((list) => {
+        const next = [...list]
+        docs.forEach((doc, i) => {
+          // 모델이 이름을 지어 줬으면 그것을 쓴다. "가상 1" 보다 "불꽃" 이 낫다.
+          const given = names?.[i]?.trim()
+          const name = given
+            ? uniqueName(next, given)
+            : nextPageName(next, prefix)
+          next.push({ id: newPageId(), name, doc })
+        })
+        setActiveId(next[list.length].id)
+        return next
+      })
+    },
+    [],
+  )
 
   const closePage = useCallback(
     (id: string) => {

@@ -916,6 +916,26 @@ function toSpec(doc) {
   }
   return { w: doc.w, h: doc.h, palette, rows };
 }
+var RUN = "~";
+var MIN_RUN = 4;
+function canPackRows(palette) {
+  return !Object.keys(palette).some((ch) => /[0-9~]/.test(ch));
+}
+function packRow(row) {
+  let out = "";
+  for (let i = 0; i < row.length; ) {
+    let j = i;
+    while (j < row.length && row[j] === row[i]) j++;
+    const n = j - i;
+    out += n >= MIN_RUN ? `${row[i]}${RUN}${n}` : row[i].repeat(n);
+    i = j;
+  }
+  return out;
+}
+function packRows(spec) {
+  if (!canPackRows(spec.palette)) throw new Error("\uD314\uB808\uD2B8\uAC00 \uC22B\uC790\uB97C \uC368\uC11C \uC811\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4");
+  return spec.rows.map(packRow);
+}
 function fromSpec(spec) {
   if (!Number.isInteger(spec.w) || !Number.isInteger(spec.h) || spec.w < 1 || spec.h < 1) {
     throw new Error(`\uC798\uBABB\uB41C \uD06C\uAE30: ${spec.w}x${spec.h}`);
@@ -35540,6 +35560,14 @@ var gridSchema = external_exports.object({
 var paletteSchema = external_exports.object({
   palette: external_exports.array(external_exports.object({ char: external_exports.string(), hex: external_exports.string() })).describe("\uBC1B\uC740 \uAC83\uACFC \uAC19\uC740 char \uBAA9\uB85D. \uAC01 hex\uB9CC \uC0C8 \uC0C9\uC73C\uB85C.")
 });
+var paletteSetSchema = external_exports.object({
+  variants: external_exports.array(
+    external_exports.object({
+      name: external_exports.string().describe("\uC9E7\uC740 \uC774\uB984. \uC608: \uBD88\uAF43, \uC5BC\uC74C, \uB3C5"),
+      palette: external_exports.array(external_exports.object({ char: external_exports.string(), hex: external_exports.string() })).describe("\uBC1B\uC740 \uAC83\uACFC \uAC19\uC740 char \uBAA9\uB85D. \uAC01 hex\uB9CC \uC0C8 \uC0C9\uC73C\uB85C.")
+    })
+  ).describe("\uC694\uCCAD\uD55C \uAC1C\uC218\uB9CC\uD07C\uC758 \uBC30\uC0C9.")
+});
 function model(config2) {
   return createGoogle({ apiKey: config2.apiKey })(config2.model);
 }
@@ -35618,6 +35646,21 @@ async function generatePalette(config2, system, user) {
       system,
       prompt: user,
       temperature: 0.7
+    });
+    return out.object;
+  } catch (err) {
+    throw new Error(describeError(err));
+  }
+}
+async function generatePaletteSet(config2, system, user) {
+  try {
+    const out = await generateObject({
+      model: model(config2),
+      schema: paletteSetSchema,
+      system,
+      prompt: user,
+      // 배색은 다양하게 나오는 편이 쓸모 있다. 형태는 어차피 잠겨 있다.
+      temperature: 0.9
     });
     return out.object;
   } catch (err) {
@@ -35705,6 +35748,22 @@ var RECOLOR_INSTRUCTION = [
   "- \uBA85\uC554 \uAD00\uACC4\uB97C \uC720\uC9C0\uD558\uC138\uC694. \uC6D0\uBCF8\uC5D0\uC11C \uC5B4\uB450\uC6E0\uB358 \uC0C9\uC740 \uC0C8 \uBC30\uD569\uC5D0\uC11C\uB3C4 \uC5B4\uB450\uC6CC\uC57C \uD569\uB2C8\uB2E4.",
   "- \uBC14\uAFC0 \uD544\uC694\uAC00 \uC5C6\uB294 \uC0C9\uC740 \uC6D0\uB798 \uAC12\uC744 \uADF8\uB300\uB85C \uB3CC\uB824\uC8FC\uC138\uC694.",
   '- hex\uB294 "#rrggbb" \uD615\uC2DD\uC785\uB2C8\uB2E4.'
+].join("\n");
+var VIRTUAL_INSTRUCTION = [
+  "\uB2F9\uC2E0\uC740 \uC774\uBBF8 \uADF8\uB824\uC9C4 \uD53D\uC140 \uC544\uD2B8\uC5D0 \uC0C8 \uBC30\uC0C9\uC744 \uC785\uD788\uB294 \uC0AC\uB78C\uC785\uB2C8\uB2E4.",
+  "",
+  "\uD615\uD0DC\uB294 \uC774\uBBF8 \uC815\uD574\uC838 \uC788\uACE0 \uBC14\uAFC0 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uB2F9\uC2E0\uC774 \uC815\uD558\uB294 \uAC83\uC740 \uC0C9\uBFD0\uC785\uB2C8\uB2E4.",
+  "",
+  "\uADDC\uCE59:",
+  "- \uADF8\uB9BC\uC744 \uADF8\uB9AC\uC9C0 \uB9C8\uC138\uC694. \uBC30\uC0C9 \uBAA9\uB85D\uB9CC \uB3CC\uB824\uC90D\uB2C8\uB2E4.",
+  "- \uBC1B\uC740 char\uB97C \uD558\uB098\uB3C4 \uBE60\uC9D0\uC5C6\uC774, \uADF8\uB300\uB85C \uB3CC\uB824\uC8FC\uC138\uC694. \uC0C8 char\uB97C \uB9CC\uB4E4\uC9C0 \uB9C8\uC138\uC694.",
+  "- \uBA85\uC554 \uAD00\uACC4\uB97C \uC720\uC9C0\uD558\uC138\uC694. \uC6D0\uBCF8\uC5D0\uC11C \uC5B4\uB450\uC6E0\uB358 \uC0C9\uC740 \uC0C8 \uBC30\uD569\uC5D0\uC11C\uB3C4 \uC5B4\uB450\uC6CC\uC57C \uD569\uB2C8\uB2E4.",
+  "  \uC774\uAC83\uC774 \uAE68\uC9C0\uBA74 \uC785\uCCB4\uAC10\uC774 \uC0AC\uB77C\uC838 \uADF8\uB9BC\uC774 \uB0A9\uC791\uD574 \uBCF4\uC785\uB2C8\uB2E4.",
+  "- \uAC01 \uBC8C\uC740 \uC11C\uB85C \uB69C\uB837\uD558\uAC8C \uB2EC\uB77C\uC57C \uD569\uB2C8\uB2E4. \uAC19\uC740 \uC0C9\uC870\uB97C \uC870\uAE08\uC529 \uBBFC \uAC83\uC740 \uC4F8\uBAA8\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.",
+  '- hex\uB294 "#rrggbb" \uD615\uC2DD\uC785\uB2C8\uB2E4.',
+  "",
+  '\uADF8\uB9BC\uC740 \uBC18\uBCF5\uC744 \uC811\uC740 \uD45C\uAE30\uB85C \uC90D\uB2C8\uB2E4. "a~10" \uC740 a\uAC00 10\uCE78 \uC774\uC5B4\uC9C4\uB2E4\uB294 \uB73B\uC785\uB2C8\uB2E4.',
+  "\uC5B4\uB290 char\uAC00 \uB113\uC740 \uBA74\uC774\uACE0 \uC5B4\uB290 char\uAC00 \uC881\uC740 \uC7A5\uC2DD\uC778\uC9C0 \uC5EC\uAE30\uC11C \uC77D\uC5B4\uB0B4\uC138\uC694."
 ].join("\n");
 function fitRow(row, w) {
   if (row.length === w) return row;
@@ -35859,6 +35918,23 @@ async function callGeminiPalette(config2, prompt, plan, preview) {
   const out = await generatePalette(config2, RECOLOR_INSTRUCTION, user);
   return out.palette;
 }
+var MAX_VIRTUAL = 8;
+async function callGeminiPaletteSet(config2, prompt, plan, preview, count) {
+  const list = plan.chars.map((c, i) => `  "${c}": "${plan.hexes[i]}"`).join("\n");
+  const rows = packRows(preview);
+  const user = [
+    "\uD604\uC7AC \uD314\uB808\uD2B8:",
+    list,
+    "",
+    `\uD615\uD0DC (${preview.w}x${preview.h}, \uBC18\uBCF5\uC744 \uC811\uC740 \uD45C\uAE30):`,
+    ...rows,
+    "",
+    `\uC694\uCCAD: ${prompt}`,
+    `\uC704 char\uB97C \uC804\uBD80 \uADF8\uB300\uB85C \uC4F0\uB294 \uBC30\uC0C9\uC744 ${count}\uBC8C \uB9CC\uB4E4\uC5B4 \uC8FC\uC138\uC694.`
+  ].join("\n");
+  const out = await generatePaletteSet(config2, VIRTUAL_INSTRUCTION, user);
+  return out.variants;
+}
 async function callGemini(config2, prompt, w, h, mode, base) {
   const system = base === void 0 ? SYSTEM_INSTRUCTION : mode === "add" ? ADD_INSTRUCTION : EDIT_INSTRUCTION;
   const user = base === void 0 ? `${w}x${h} \uD53D\uC140 \uC544\uD2B8\uB85C \uADF8\uB824\uC8FC\uC138\uC694: ${prompt}` : mode === "add" ? [
@@ -35916,7 +35992,7 @@ function createGeminiHandler(config2) {
         return true;
       }
       const { genW, genH, factor } = planGeneration(w, h);
-      const mode = parsed.mode === "edit" || parsed.mode === "add" || parsed.mode === "recolor" ? parsed.mode : "create";
+      const mode = parsed.mode === "edit" || parsed.mode === "add" || parsed.mode === "recolor" || parsed.mode === "virtual" ? parsed.mode : "create";
       let base;
       let baseDoc;
       if (mode !== "create" && isSpecLike(parsed.base)) {
@@ -35932,6 +36008,41 @@ function createGeminiHandler(config2) {
       }
       if (mode !== "create" && base === void 0) {
         send(res, 400, { error: "\uC774 \uBAA8\uB4DC\uC5D0\uB294 \uAE30\uC874 \uADF8\uB9BC\uC774 \uD544\uC694\uD569\uB2C8\uB2E4." });
+        return true;
+      }
+      if (mode === "virtual" && baseDoc !== void 0 && base !== void 0) {
+        const plan = planRecolor(baseDoc);
+        if (plan.chars.length === 0) {
+          send(res, 400, { error: "\uCE94\uBC84\uC2A4\uAC00 \uBE44\uC5B4 \uC788\uC5B4 \uBC30\uC0C9\uC744 \uB9CC\uB4E4 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4." });
+          return true;
+        }
+        const count = Math.min(MAX_VIRTUAL, Math.max(1, Number(parsed.count) || 4));
+        const raw2 = await callGeminiPaletteSet(config2, prompt, plan, base, count);
+        const variants = [];
+        const notes = [];
+        for (const entry of raw2.slice(0, count)) {
+          const { mappings, changed, skipped } = buildRecolorMappings(plan, entry.palette ?? []);
+          if (changed === 0) continue;
+          const safe = toSpecSafe(replaceColors(baseDoc, mappings, 0).doc);
+          variants.push({ name: (entry.name ?? "").trim() || `\uBC30\uC0C9 ${variants.length + 1}`, spec: safe.spec });
+          if (skipped > 0) {
+            notes.push(`"${entry.name}"\uC5D0\uC11C ${skipped}\uAC1C \uC0C9\uC740 \uBAA8\uB378\uC774 \uBE60\uB728\uB824 \uC6D0\uB798 \uAC12\uC744 \uC720\uC9C0\uD588\uC2B5\uB2C8\uB2E4.`);
+          }
+        }
+        if (variants.length === 0) {
+          send(res, 502, {
+            error: "\uBAA8\uB378\uC774 \uC4F8 \uB9CC\uD55C \uBC30\uC0C9\uC744 \uB3CC\uB824\uC8FC\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uC694\uCCAD\uC744 \uB354 \uAD6C\uCCB4\uC801\uC73C\uB85C \uC801\uC5B4\uBCF4\uC138\uC694."
+          });
+          return true;
+        }
+        if (variants.length < count) {
+          notes.unshift(`${count}\uBC8C \uC911 ${variants.length}\uBC8C\uB9CC \uC4F8 \uC218 \uC788\uC5C8\uC2B5\uB2C8\uB2E4.`);
+        }
+        send(res, 200, {
+          variants,
+          warnings: notes,
+          model: config2.model
+        });
         return true;
       }
       if (mode === "recolor" && baseDoc !== void 0 && base !== void 0) {

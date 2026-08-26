@@ -8,6 +8,8 @@ import type { SpriteShape } from '../core/generate/sprite'
 import { defaultSpriteOptions, generateSprite } from '../core/generate/sprite'
 import type { Variant } from '../core/generate/variants'
 import { defaultVariantSetOptions, makeVariants } from '../core/generate/variants'
+import type { PixelSpec } from '../core/codec'
+import { fromSpec, toSpec } from '../core/codec'
 import { DocThumb } from './DocThumb'
 
 type Mode = 'sprite' | 'pattern' | 'dice' | 'variant'
@@ -19,7 +21,11 @@ export interface GeneratePanelProps {
   doc: PixelDoc
   onGenerate: (doc: PixelDoc) => void
   /** 만든 변형을 새 페이지로 펼친다. */
-  onGenerateMany: (docs: ReadonlyArray<PixelDoc>) => void
+  onGenerateMany: (
+    docs: ReadonlyArray<PixelDoc>,
+    prefix?: string,
+    names?: ReadonlyArray<string>,
+  ) => void
 }
 
 export function GeneratePanel(props: GeneratePanelProps) {
@@ -50,6 +56,46 @@ export function GeneratePanel(props: GeneratePanelProps) {
   const [contrast, setContrast] = useState(defaultVariantSetOptions.contrast)
   const [brightness, setBrightness] = useState(defaultVariantSetOptions.brightness)
   const [keepNeutral, setKeepNeutral] = useState(defaultVariantSetOptions.keepNeutral)
+
+  /** 가상 생성: 프레임은 잠근 채 배색만 모델에게 받는다. */
+  const [theme, setTheme] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const runVirtual = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'virtual',
+          prompt: theme.trim(),
+          count,
+          w: props.doc.w,
+          h: props.doc.h,
+          base: toSpec(props.doc),
+        }),
+      })
+      const body = await res.json()
+      if (!res.ok) throw new Error(body?.error ?? `요청 실패 (${res.status})`)
+      const list = (body.variants ?? []) as Array<{ name?: string; spec: PixelSpec }>
+      if (list.length === 0) throw new Error('돌려받은 배색이 없습니다.')
+      props.onGenerateMany(
+        list.map((v) => fromSpec(v.spec)),
+        '가상',
+        list.map((v) => v.name ?? ''),
+      )
+      if (Array.isArray(body.warnings) && body.warnings.length > 0) {
+        setError(body.warnings.join(' '))
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   /**
    * 미리보기와 실제 결과가 같은 함수에서 나와야 한다.
@@ -176,6 +222,11 @@ export function GeneratePanel(props: GeneratePanelProps) {
 
       {mode === 'variant' ? (
         <VariantControls
+          theme={theme}
+          setTheme={setTheme}
+          busy={busy}
+          error={error}
+          onVirtual={runVirtual}
           variants={variants}
           count={count}
           setCount={setCount}
@@ -404,6 +455,11 @@ export function GeneratePanel(props: GeneratePanelProps) {
 }
 
 interface VariantControlsProps {
+  theme: string
+  setTheme: (v: string) => void
+  busy: boolean
+  error: string | null
+  onVirtual: () => void
   variants: ReadonlyArray<Variant>
   count: number
   setCount: (v: number) => void
@@ -435,6 +491,29 @@ function VariantControls(p: VariantControlsProps) {
       </div>
 
       {empty && <p className="hint">캔버스가 비어 있습니다. 먼저 그림을 그리거나 불러오세요.</p>}
+
+      {/* 색조를 손으로 돌리는 대신 어떤 느낌인지만 적는다. 형태는 어느 쪽이든 잠겨 있다. */}
+      <div className="row">
+        <input
+          className="grow"
+          type="text"
+          value={p.theme}
+          placeholder="불꽃, 얼음, 독, 황금..."
+          onChange={(e) => p.setTheme(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !p.busy && p.theme.trim() !== '') p.onVirtual()
+            e.stopPropagation()
+          }}
+        />
+        <button
+          disabled={p.busy || empty || p.theme.trim() === ''}
+          onClick={p.onVirtual}
+          data-tip="형태는 그대로 두고 어울리는 배색만 AI에게 받습니다"
+        >
+          {p.busy ? '받는 중...' : '가상 생성'}
+        </button>
+      </div>
+      {p.error !== null && <p className="hint error">{p.error}</p>}
 
       <div className="row">
         <label>개수 {p.count}</label>
