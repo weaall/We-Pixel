@@ -50,7 +50,7 @@ await client.connect(transport)
 try {
   const { tools } = await client.listTools()
   const names = tools.map((t) => t.name).sort()
-  check('도구 등록', names.length === 9, names.join(', '))
+  check('도구 등록', names.length === 6, names.join(', '))
 
   // draw_design — 잘못된 입력이 조용히 통과하지 않아야 한다
   const bad = await client.callTool({
@@ -103,54 +103,57 @@ try {
   const missing = await client.callTool({ name: 'get_design', arguments: { name: 'NoSuchThing' } })
   check('없는 디자인 오류', missing.isError === true)
 
-  // 알고리즘 생성기: 시드 고정 시 재현되어야 한다
-  const g1 = await client.callTool({
-    name: 'generate_sprite',
-    arguments: { name: 'SmokeSprite', w: 32, h: 32, seed: 'goblin' },
-  })
-  const g2 = await client.callTool({
-    name: 'generate_sprite',
-    arguments: { name: 'SmokeSprite2', w: 32, h: 32, seed: 'goblin' },
-  })
-  check('시드 재현성', imageOf(g1)?.data === imageOf(g2)?.data)
-
-  const dice = await client.callTool({
-    name: 'generate_dice',
-    arguments: { name: 'SmokeDice', size: 32, seed: 'lucky', material: 'gem', hue: 32 },
-  })
-  check('generate_dice 성공', !dice.isError && !!imageOf(dice), textOf(dice).split('\n')[0])
-
+  // 색 변형: 형태는 그대로, 팔레트만 바뀌어야 한다
   const variants = await client.callTool({
     name: 'generate_variants',
-    arguments: { name: 'SmokeDice', count: 3, hue: 200 },
+    arguments: { name: HEART.name, count: 3, hue: 200 },
   })
   const variantText = textOf(variants)
   check(
     'generate_variants 성공',
-    !variants.isError && !!imageOf(variants) && variantText.includes('SmokeDice-3'),
+    !variants.isError && !!imageOf(variants) && variantText.includes(`${HEART.name}-3`),
     variantText.split('\n')[0],
   )
 
-  const diceSpec = await client.callTool({ name: 'get_design', arguments: { name: 'SmokeDice' } })
+  const baseSpec = await client.callTool({ name: 'get_design', arguments: { name: HEART.name } })
   const variantSpec = await client.callTool({
     name: 'get_design',
-    arguments: { name: 'SmokeDice-1' },
+    arguments: { name: `${HEART.name}-1` },
   })
-  // 색만 바뀌어야 한다. 행 문자열이 같으면 어떤 칸이 칠해졌는지가 같다는 뜻이다.
-  const rowsOf = (r) => textOf(r).split('rows:')[1]
-  check('색 변형은 형태를 건드리지 않는다', rowsOf(diceSpec) === rowsOf(variantSpec))
+  // 문자 이름은 비교하면 안 된다. 저장된 디자인은 작성자가 쓴 문자를 유지하지만
+  // 생성된 변형은 toSpec 이 다시 매긴다. 같은 그림이어도 k 가 a 로 바뀐다.
+  // 형태란 "어느 칸끼리 같은 색인가" 이므로 그것만 남겨 비교한다.
+  const shapeOf = (r) => {
+    const rows = textOf(r)
+      .split('rows:')[1]
+      .trim()
+      .split('\n')
+      .map((line) => line.trim().replace(/^\d+\s+/, ''))
+    const seen = new Map()
+    return rows
+      .map((row) =>
+        [...row]
+          .map((ch) => {
+            if (!seen.has(ch)) seen.set(ch, seen.size)
+            return seen.get(ch)
+          })
+          .join(','),
+      )
+      .join('|')
+  }
+  check('색 변형은 형태를 건드리지 않는다', shapeOf(baseSpec) === shapeOf(variantSpec))
 
-  const pat = await client.callTool({
-    name: 'generate_pattern',
-    arguments: { name: 'SmokeTile', w: 32, h: 32, seed: 'grass', seamless: true },
+  const rerun = await client.callTool({
+    name: 'generate_variants',
+    arguments: { name: HEART.name, count: 3, hue: 200 },
   })
-  check('generate_pattern 성공', !pat.isError && !!imageOf(pat))
+  check('같은 인자면 같은 결과', imageOf(variants)?.data === imageOf(rerun)?.data)
 
   const listed = await client.callTool({ name: 'list_designs', arguments: {} })
   const listText = textOf(listed)
   check(
     'list_designs 목록',
-    ['SmokeHeart', 'SmokeSprite', 'SmokeSprite2', 'SmokeTile'].every((n) => listText.includes(n)),
+    [HEART.name, `${HEART.name}-1`, `${HEART.name}-3`].every((n) => listText.includes(n)),
   )
 
   // export

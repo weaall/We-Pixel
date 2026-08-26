@@ -59,7 +59,7 @@ type ModalId = 'ai' | 'generate' | 'import' | 'recolor' | 'workspace' | 'export'
 
 const RIGHT_RAIL: ReadonlyArray<{ id: ModalId; label: string; icon: ComponentType<IconProps> }> = [
   { id: 'ai', label: 'AI 생성', icon: IconSparkle },
-  { id: 'generate', label: '자동 생성', icon: IconDice },
+  { id: 'generate', label: '색 변형', icon: IconDice },
   { id: 'import', label: '이미지 가져오기', icon: IconImage },
   { id: 'recolor', label: '색상 교체', icon: IconRecolor },
   { id: 'workspace', label: '디자인 저장소', icon: IconFolder },
@@ -674,10 +674,8 @@ export function App() {
         </Modal>
       )}
       {modal === 'generate' && (
-        <Modal title="자동 생성" onClose={() => setModal(null)}>
+        <Modal title="색 변형" onClose={() => setModal(null)}>
           <GeneratePanel
-            width={doc.w}
-            height={doc.h}
             doc={doc}
             onGenerate={replaceDoc}
             onGenerateMany={addPages}

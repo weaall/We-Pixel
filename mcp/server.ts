@@ -7,10 +7,6 @@ import type { PixelSpec } from '../src/core/codec'
 import { fromSpec, toSpec, TRANSPARENT_CHAR } from '../src/core/codec'
 import type { PixelDoc } from '../src/core/doc'
 import { MAX_SIZE, MIN_SIZE } from '../src/core/doc'
-import { defaultDiceOptions, generateDice, randomPips } from '../src/core/generate/dice'
-import { generatePattern } from '../src/core/generate/pattern'
-import { generateSprite } from '../src/core/generate/sprite'
-import { randomSeed, resolveSeed } from '../src/core/generate/rng'
 import { defaultVariantSetOptions, makeVariants } from '../src/core/generate/variants'
 import { defaultActionSpec } from '../src/export/csharp'
 import { buildPackage } from '../src/export/package'
@@ -217,92 +213,6 @@ server.registerTool(
 // ---------------------------------------------------------------------------
 
 server.registerTool(
-  'generate_sprite',
-  {
-    title: '스프라이트 알고리즘 생성',
-    description: [
-      '펄린 노이즈 기반으로 대칭 생물형 실루엣을 생성한다.',
-      '추상적인 형태만 나오므로 구체적 대상("고블린", "검")에는 draw_design을 쓴다.',
-      '시드가 같으면 항상 같은 결과가 나온다. 시드를 비우면 무작위로 뽑는다.',
-    ].join('\n'),
-    inputSchema: {
-      name: nameArg,
-      w: sizeArg.default(32),
-      h: sizeArg.default(32),
-      seed: z.string().optional().describe('숫자 또는 아무 단어. 비우면 무작위.'),
-      hue: z.number().min(0).max(360).default(210),
-      density: z.number().min(0).max(1).default(0.55).describe('몸통이 캔버스를 채우는 정도'),
-      mirrorX: z.boolean().default(true),
-      outline: z.boolean().default(true),
-      shading: z.boolean().default(true),
-      accent: z.boolean().default(true).describe('보색 포인트(눈 같은 디테일)'),
-      shape: z
-        .enum(['blob', 'tall', 'wide'])
-        .default('blob')
-        .describe('체형. 실루엣 비율을 정한다.'),
-    },
-  },
-  async ({ name, w, h, seed, hue, density, mirrorX, outline, shading, accent, shape }) => {
-    try {
-      const resolved = seed === undefined ? randomSeed() : resolveSeed(seed)
-      const doc = generateSprite({
-        w, h, seed: resolved, hue, density, mirrorX, outline, shading, accent, shape,
-      })
-      return await designResult(name, doc, `스프라이트를 생성했습니다 (시드 ${resolved}).`)
-    } catch (err) {
-      return fail(err)
-    }
-  },
-)
-
-server.registerTool(
-  'generate_dice',
-  {
-    title: '주사위 생성',
-    description: [
-      '등축(아이소메트릭) 주사위를 만든다.',
-      '색조와 재질만 바꾸면 같은 형태로 다른 주사위가 나온다 — 세트를 만들 때 쓴다.',
-      '',
-      '마주보는 면의 합은 7이므로 보이는 세 면은 (1,6) (2,5) (3,4)에서 하나씩이다.',
-      'pips를 비우면 시드에서 그 규칙에 맞게 뽑는다.',
-    ].join('\n'),
-    inputSchema: {
-      name: nameArg,
-      size: sizeArg.default(32).describe('정사각 캔버스 한 변'),
-      seed: z.string().optional().describe('숫자 또는 아무 단어. 비우면 무작위.'),
-      hue: z.number().min(0).max(360).default(110),
-      material: z
-        .enum(['stone', 'metal', 'wood', 'gem'])
-        .default('stone')
-        .describe('재질. 대비와 눈 색이 달라진다.'),
-      speckle: z.number().min(0).max(1).default(0.5).describe('표면 잡티. 0이면 매끈하다.'),
-      pips: z
-        .array(z.number().int().min(1).max(6))
-        .length(3)
-        .optional()
-        .describe('위/왼쪽/오른쪽 면의 눈. 비우면 시드에서 뽑는다.'),
-    },
-  },
-  async ({ name, size, seed, hue, material, speckle, pips }) => {
-    try {
-      const resolved = seed === undefined ? randomSeed() : resolveSeed(seed)
-      const doc = generateDice({
-        ...defaultDiceOptions,
-        size,
-        seed: resolved,
-        hue,
-        material,
-        speckle,
-        pips: (pips as [number, number, number] | undefined) ?? randomPips(resolved),
-      })
-      return await designResult(name, doc, `주사위를 생성했습니다 (시드 ${resolved}).`)
-    } catch (err) {
-      return fail(err)
-    }
-  },
-)
-
-server.registerTool(
   'generate_variants',
   {
     title: '색 변형 만들기',
@@ -378,37 +288,6 @@ server.registerTool(
     }
   },
 )
-
-server.registerTool(
-  'generate_pattern',
-  {
-    title: '무늬 / 타일 생성',
-    description: 'fBm 노이즈를 명암 단계로 양자화해 지형 타일이나 텍스처를 만든다.',
-    inputSchema: {
-      name: nameArg,
-      w: sizeArg.default(32),
-      h: sizeArg.default(32),
-      seed: z.string().optional(),
-      hue: z.number().min(0).max(360).default(140),
-      steps: z.number().int().min(2).max(8).default(4).describe('명암 단계 수. 적을수록 깔끔하다.'),
-      detail: z.number().min(1).max(10).default(3.5),
-      seamless: z.boolean().default(false).describe('상하좌우가 이어지는 타일'),
-    },
-  },
-  async ({ name, w, h, seed, hue, steps, detail, seamless }) => {
-    try {
-      const resolved = seed === undefined ? randomSeed() : resolveSeed(seed)
-      const doc = generatePattern({ w, h, seed: resolved, hue, steps, detail, octaves: 3, seamless })
-      return await designResult(name, doc, `무늬를 생성했습니다 (시드 ${resolved}).`)
-    } catch (err) {
-      return fail(err)
-    }
-  },
-)
-
-// ---------------------------------------------------------------------------
-// 조회
-// ---------------------------------------------------------------------------
 
 server.registerTool(
   'get_design',
