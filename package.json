@@ -17,7 +17,9 @@
     "vercel-build": "tsc -b && vite build && npm run build:fn",
     "deploy": "npx --yes vercel@latest --prod",
     "deploy:preview": "npx --yes vercel@latest",
-    "build:fn": "esbuild server/vercel-generate.ts --bundle --platform=node --format=esm --outfile=api/generate.js --log-level=warning --banner:js=\"// 생성된 파일입니다. 편집하지 마세요. 소스: server/vercel-generate.ts (npm run build:fn)\""
+    "build:fn": "esbuild server/vercel-generate.ts --bundle --platform=node --format=esm --outfile=api/generate.js --log-level=warning --banner:js=\"// 생성된 파일입니다. 편집하지 마세요. 소스: server/vercel-generate.ts (npm run build:fn)\"",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
@@ -32,6 +34,7 @@
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
     "typescript": "^5.7.2",
-    "vite": "^6.0.5"
+    "vite": "^6.0.5",
+    "vitest": "^4.1.11"
   }
 }

@@ -656,3 +656,16 @@ label.check input {
 .rail-popover-wrap:has(.rail-popover) .rail-btn[data-tip]::after {
   display: none;
 }
+
+/* 몇 개 안 되는 배타 선택지. 드롭다운보다 한눈에 들어온다. */
+.seg {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 4px;
+}
+
+.seg button {
+  padding: 5px 0;
+  font-size: 11px;
+}

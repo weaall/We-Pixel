@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { PixelDoc } from '../core/doc'
 import { defaultPatternOptions, generatePattern } from '../core/generate/pattern'
 import { randomSeed, resolveSeed } from '../core/generate/rng'
+import type { SpriteShape } from '../core/generate/sprite'
 import { defaultSpriteOptions, generateSprite } from '../core/generate/sprite'
 
 type Mode = 'sprite' | 'pattern'
@@ -22,6 +23,7 @@ export function GeneratePanel(props: GeneratePanelProps) {
   const [outline, setOutline] = useState(defaultSpriteOptions.outline)
   const [shading, setShading] = useState(defaultSpriteOptions.shading)
   const [accent, setAccent] = useState(defaultSpriteOptions.accent)
+  const [shape, setShape] = useState<SpriteShape>(defaultSpriteOptions.shape ?? 'blob')
 
   const [steps, setSteps] = useState(defaultPatternOptions.steps)
   const [detail, setDetail] = useState(defaultPatternOptions.detail)
@@ -41,6 +43,7 @@ export function GeneratePanel(props: GeneratePanelProps) {
             outline,
             shading,
             accent,
+            shape,
           })
         : generatePattern({
             w: props.width,
@@ -106,6 +109,25 @@ export function GeneratePanel(props: GeneratePanelProps) {
 
       {mode === 'sprite' ? (
         <>
+          <div className="row">
+            <label>체형</label>
+            <div className="grow seg">
+              {([
+                ['blob', '보통'],
+                ['tall', '길쭉'],
+                ['wide', '납작'],
+              ] as ReadonlyArray<[SpriteShape, string]>).map(([value, label]) => (
+                <button
+                  key={value}
+                  className={shape === value ? 'active' : ''}
+                  onClick={() => setShape(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="row">
             <label>밀도 {density.toFixed(2)}</label>
             <input

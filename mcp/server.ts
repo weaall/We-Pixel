@@ -234,12 +234,18 @@ server.registerTool(
       outline: z.boolean().default(true),
       shading: z.boolean().default(true),
       accent: z.boolean().default(true).describe('보색 포인트(눈 같은 디테일)'),
+      shape: z
+        .enum(['blob', 'tall', 'wide'])
+        .default('blob')
+        .describe('체형. 실루엣 비율을 정한다.'),
     },
   },
-  async ({ name, w, h, seed, hue, density, mirrorX, outline, shading, accent }) => {
+  async ({ name, w, h, seed, hue, density, mirrorX, outline, shading, accent, shape }) => {
     try {
       const resolved = seed === undefined ? randomSeed() : resolveSeed(seed)
-      const doc = generateSprite({ w, h, seed: resolved, hue, density, mirrorX, outline, shading, accent })
+      const doc = generateSprite({
+        w, h, seed: resolved, hue, density, mirrorX, outline, shading, accent, shape,
+      })
       return await designResult(name, doc, `스프라이트를 생성했습니다 (시드 ${resolved}).`)
     } catch (err) {
       return fail(err)
