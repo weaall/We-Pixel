@@ -61,11 +61,22 @@ export function App() {
   const [zoom, setZoom] = useState(() => fitZoom(32, 32))
   const [showGrid, setShowGrid] = useState(true)
   const [palette, setPalette] = useState<string[]>([...DEFAULT_PALETTE])
-  const [hover, setHover] = useState<{ x: number; y: number } | null>(null)
 
   const [modal, setModal] = useState<ModalId | null>(null)
   const [sizeW, setSizeW] = useState('32')
   const [sizeH, setSizeH] = useState('32')
+
+  /**
+   * 좌표 표시는 DOM에 직접 쓴다.
+   *
+   * state로 두면 pointermove마다 App 전체가 리렌더되어 레일과 미리보기까지
+   * 다시 그려진다. 텍스트 한 줄 때문에 치를 비용이 아니다.
+   */
+  const hoverLabelRef = useRef<HTMLSpanElement | null>(null)
+  const handleHover = useCallback((pos: { x: number; y: number } | null) => {
+    const el = hoverLabelRef.current
+    if (el !== null) el.textContent = pos === null ? '—' : `${pos.x}, ${pos.y}`
+  }, [])
 
   const stageRef = useRef<HTMLDivElement | null>(null)
   const [stageSize, setStageSize] = useState<{ width: number; height: number } | null>(null)
@@ -382,7 +393,7 @@ export function App() {
               onBeforeStroke={beforeStroke}
               onDocChanged={syncDoc}
               onPickColor={setColor}
-              onHover={setHover}
+              onHover={handleHover}
               onPaint={handlePaint}
             />
           </div>
@@ -398,7 +409,7 @@ export function App() {
               {doc.w}×{doc.h}
             </span>
             <span>{zoom}x</span>
-            <span>{hover ? `${hover.x}, ${hover.y}` : '—'}</span>
+            <span ref={hoverLabelRef}>—</span>
           </div>
         </main>
 
@@ -407,7 +418,7 @@ export function App() {
             <button
               key={item.id}
               className={`rail-btn${modal === item.id ? ' active' : ''}`}
-              title={item.label}
+              data-tip={item.label}
               aria-label={item.label}
               onClick={() => openModal(item.id)}
             >

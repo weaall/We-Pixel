@@ -6,7 +6,7 @@ import type { PixelDoc } from '../core/doc'
 import { getPixel } from '../core/doc'
 import { DocRenderer, screenToPixel } from '../core/render'
 import type { StampOptions, ToolId } from '../core/tools'
-import { drawLine, drawRect, floodFill, stamp } from '../core/tools'
+import { drawLine, drawRect, floodFill, stamp, stampCells } from '../core/tools'
 
 export interface CanvasViewProps {
   doc: PixelDoc
@@ -50,6 +50,11 @@ export function CanvasView(props: CanvasViewProps) {
   const last = useRef<{ x: number; y: number } | null>(null)
   /** 도형 도구의 실시간 미리보기용 원본 스냅샷. */
   const base = useRef<Uint8ClampedArray | null>(null)
+  /**
+   * 커서가 놓인 칸. state로 두면 pointermove마다 리렌더가 돌아 무거워진다.
+   * 그리기와 같은 경로(직접 페인트)로 처리한다.
+   */
+  const hover = useRef<{ x: number; y: number } | null>(null)
 
   /**
    * 스트로크 중에는 React를 거치지 않고 직접 그린다.
@@ -59,10 +64,18 @@ export function CanvasView(props: CanvasViewProps) {
     const canvas = canvasRef.current
     if (!canvas) return
     if (!rendererRef.current) rendererRef.current = new DocRenderer()
-    rendererRef.current.draw(canvas, doc, { zoom, showGrid })
+    // 그리는 중에는 커서 표시를 숨긴다. 칠해지는 자리를 테두리가 가린다.
+    const cursor =
+      hover.current === null || drawing.current
+        ? null
+        : tool === 'pen' || tool === 'eraser'
+          ? stampCells(doc, hover.current.x, hover.current.y, stampOptions)
+          : [hover.current]
+
+    rendererRef.current.draw(canvas, doc, { zoom, showGrid, hover: cursor })
     // 미리보기도 같은 경로로 갱신해야 스트로크 중에 한 박자 늦지 않는다.
     onPaint?.()
-  }, [doc, zoom, showGrid, onPaint])
+  }, [doc, zoom, showGrid, onPaint, tool, stampOptions])
 
   useEffect(() => {
     paint()
@@ -152,10 +165,17 @@ export function CanvasView(props: CanvasViewProps) {
 
   const handlePointerMove = (e: ReactPointerEvent<HTMLCanvasElement>) => {
     const p = posOf(e)
+    const moved = p?.x !== hover.current?.x || p?.y !== hover.current?.y
+    hover.current = p
     onHover(p)
-    if (!drawing.current || !p) return
-    advance(p)
-    paint()
+
+    if (drawing.current && p) {
+      advance(p)
+      paint()
+      return
+    }
+    // 같은 칸 안에서 움직이는 동안에는 다시 그릴 이유가 없다.
+    if (moved) paint()
   }
 
   const endStroke = (e: ReactPointerEvent<HTMLCanvasElement>) => {
@@ -186,7 +206,11 @@ export function CanvasView(props: CanvasViewProps) {
       onPointerMove={handlePointerMove}
       onPointerUp={endStroke}
       onPointerCancel={endStroke}
-      onPointerLeave={() => onHover(null)}
+      onPointerLeave={() => {
+        hover.current = null
+        onHover(null)
+        paint()
+      }}
       onContextMenu={(e) => e.preventDefault()}
     />
   )

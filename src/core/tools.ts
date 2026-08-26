@@ -132,3 +132,40 @@ export function floodFill(doc: PixelDoc, sx: number, sy: number, c: RGBA): void 
 export function eraseColor(): RGBA {
   return TRANSPARENT
 }
+
+/**
+ * 스탬프가 덮게 될 칸 목록. 커서 표시용이다.
+ *
+ * stamp()와 같은 계산이지만 배열을 만들므로 그리기 경로에서는 쓰지 않는다.
+ * 스트로크 중에 매번 배열을 할당하면 GC가 입력 지연으로 돌아온다.
+ */
+export function stampCells(
+  doc: PixelDoc,
+  x: number,
+  y: number,
+  o: StampOptions,
+): Array<{ x: number; y: number }> {
+  const half = Math.floor((o.size - 1) / 2)
+  const xs = o.mirrorX ? [x, doc.w - 1 - x] : [x]
+  const ys = o.mirrorY ? [y, doc.h - 1 - y] : [y]
+  const seen = new Set<number>()
+  const cells: Array<{ x: number; y: number }> = []
+
+  for (const bx of xs) {
+    for (const by of ys) {
+      for (let dy = 0; dy < o.size; dy++) {
+        for (let dx = 0; dx < o.size; dx++) {
+          const cx = bx - half + dx
+          const cy = by - half + dy
+          if (!inBounds(doc, cx, cy)) continue
+          // 대칭이 겹치는 자리가 생긴다. 테두리를 두 번 그리면 진하게 보인다.
+          const key = cy * doc.w + cx
+          if (seen.has(key)) continue
+          seen.add(key)
+          cells.push({ x: cx, y: cy })
+        }
+      }
+    }
+  }
+  return cells
+}

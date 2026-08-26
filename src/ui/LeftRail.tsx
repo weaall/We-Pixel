@@ -246,7 +246,7 @@ function RailButton(props: {
   return (
     <button
       className={`rail-btn${props.active ? ' active' : ''}`}
-      title={props.title}
+      data-tip={props.title}
       aria-label={props.title}
       aria-pressed={props.active}
       onClick={props.onClick}
@@ -290,7 +290,7 @@ function Popover(props: {
     <div className="rail-popover-wrap" ref={wrapRef}>
       <button
         className={`rail-btn${props.open ? ' active' : ''}`}
-        title={props.title}
+        data-tip={props.title}
         aria-label={props.title}
         aria-expanded={props.open}
         onClick={props.onToggle}
