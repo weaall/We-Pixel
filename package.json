@@ -9,7 +9,6 @@
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
     "mcp:build": "esbuild mcp/server.ts --bundle --platform=node --format=esm --packages=external --outfile=dist-mcp/server.mjs --log-level=warning",
-    "probe:roll": "tsx tools/probe-roll.mts",
     "mcp:smoke": "npm run mcp:build && node scripts/mcp-smoke.mjs",
     "test:repair": "esbuild scripts/repair-test.ts --bundle --platform=node --format=esm --packages=external --outfile=node_modules/.tmp/repair-test.mjs --log-level=warning && node node_modules/.tmp/repair-test.mjs",
     "build:server": "esbuild server/serve.ts --bundle --platform=node --format=esm --packages=external --outfile=dist-server/serve.mjs --log-level=warning",
