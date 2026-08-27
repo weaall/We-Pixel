@@ -50,7 +50,7 @@ await client.connect(transport)
 try {
   const { tools } = await client.listTools()
   const names = tools.map((t) => t.name).sort()
-  check('도구 등록', names.length === 7, names.join(', '))
+  check('도구 등록', names.length === 8, names.join(', '))
 
   // draw_design — 잘못된 입력이 조용히 통과하지 않아야 한다
   const bad = await client.callTool({
@@ -179,6 +179,37 @@ try {
     arguments: { name: 'SmokeBad', preset: '없는것' },
   })
   check('없는 조합은 오류', badPreset.isError === true, textOf(badPreset).split('\n')[0])
+
+  // 버튼: 9-슬라이스라 한 장으로 어떤 크기든 나온다
+  const btn = await client.callTool({
+    name: 'generate_button',
+    arguments: { name: 'SmokeBtn', w: 96, h: 32, preset: '황금', sheet: true },
+  })
+  const btnText = textOf(btn)
+  check('generate_button 성공', !btn.isError && !!imageOf(btn), btnText.split('\n')[0])
+  check(
+    '네 상태 모두 저장',
+    ['normal', 'hover', 'pressed', 'disabled'].every((s) => btnText.includes(`SmokeBtn-${s}`)),
+  )
+  check('9-슬라이스 시트', btnText.includes('.zip'), (btnText.match(/시트: .*/) ?? [''])[0])
+
+  const wide = await client.callTool({
+    name: 'generate_button',
+    arguments: { name: 'SmokeWide', w: 192, h: 96 },
+  })
+  check('임의 크기', !wide.isError && textOf(wide).includes('192x96'))
+
+  const btnNormal = await client.callTool({ name: 'get_design', arguments: { name: 'SmokeBtn-normal' } })
+  const btnPressed = await client.callTool({ name: 'get_design', arguments: { name: 'SmokeBtn-pressed' } })
+  // 상태가 달라도 형태는 같아야 한다. 크기가 변하면 눌렀을 때 옆 요소가 밀린다.
+  const rowsOnly = (r) => textOf(r).split('rows:')[1]
+  check('상태가 달라도 형태는 같다', rowsOnly(btnNormal) === rowsOnly(btnPressed))
+
+  const badBtn = await client.callTool({
+    name: 'generate_button',
+    arguments: { name: 'SmokeBad2', preset: '없는것' },
+  })
+  check('없는 조합은 오류', badBtn.isError === true)
 
   const listed = await client.callTool({ name: 'list_designs', arguments: {} })
   const listText = textOf(listed)

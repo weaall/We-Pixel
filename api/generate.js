@@ -1945,6 +1945,49 @@ function buttonSetFromRoles(w, h, entries) {
   return BUTTON_STATES.map((state) => ({ state, spec: buttonSpec({ w, h, state, palette }) }));
 }
 
+// src/core/generate/kit.ts
+var KIT_ROLE_LIST = [
+  ...DICE_ROLE_LIST.map((e) => ({
+    role: `dice.${e.role}`,
+    hex: e.hex,
+    note: "\uC8FC\uC0AC\uC704"
+  })),
+  ...BUTTON_ROLE_LIST.map((e) => ({
+    role: `ui.${e.role}`,
+    hex: e.hex,
+    note: "\uBC84\uD2BC\uACFC \uD328\uB110"
+  }))
+];
+var DICE_PREFIX = "dice.";
+var UI_PREFIX = "ui.";
+function split(entries) {
+  const dice = [];
+  const ui = [];
+  for (const entry of entries) {
+    const role = (entry.char ?? "").trim();
+    const hex4 = (entry.hex ?? "").trim();
+    if (role.startsWith(DICE_PREFIX)) dice.push({ char: role.slice(DICE_PREFIX.length), hex: hex4 });
+    else if (role.startsWith(UI_PREFIX)) ui.push({ char: role.slice(UI_PREFIX.length), hex: hex4 });
+  }
+  return { dice, ui };
+}
+var defaultKitSizes = {
+  button: { w: 96, h: 32 },
+  panel: { w: 160, h: 96 }
+};
+function kitFromRoles(entries, sizes = defaultKitSizes) {
+  const parts = split(entries);
+  return {
+    dice: diceSetSpecsFromRoles(parts.dice),
+    button: buttonSetFromRoles(sizes.button.w, sizes.button.h, parts.ui),
+    panel: buttonSetFromRoles(sizes.panel.w, sizes.panel.h, parts.ui)[0].spec
+  };
+}
+function missingKitRoles(entries) {
+  const given = new Set(entries.map((e) => (e.char ?? "").trim()));
+  return KIT_ROLE_LIST.map((e) => e.role).filter((r) => !given.has(r));
+}
+
 // src/core/compose.ts
 function composite(base, addition, options) {
   const doc = { w: base.w, h: base.h, data: new Uint8ClampedArray(base.data) };
@@ -36494,6 +36537,27 @@ var VIRTUAL_INSTRUCTION = [
   '\uADF8\uB9BC\uC740 \uBC18\uBCF5\uC744 \uC811\uC740 \uD45C\uAE30\uB85C \uC90D\uB2C8\uB2E4. "a~10" \uC740 a\uAC00 10\uCE78 \uC774\uC5B4\uC9C4\uB2E4\uB294 \uB73B\uC785\uB2C8\uB2E4.',
   "\uC5B4\uB290 char\uAC00 \uB113\uC740 \uBA74\uC774\uACE0 \uC5B4\uB290 char\uAC00 \uC881\uC740 \uC7A5\uC2DD\uC778\uC9C0 \uC5EC\uAE30\uC11C \uC77D\uC5B4\uB0B4\uC138\uC694."
 ].join("\n");
+var KIT_INSTRUCTION = [
+  "\uB2F9\uC2E0\uC740 \uAC8C\uC784 UI \uD55C \uBC8C\uC758 \uBC30\uC0C9\uC744 \uC815\uD558\uB294 \uC0AC\uB78C\uC785\uB2C8\uB2E4.",
+  "",
+  "\uC8FC\uC0AC\uC704\uC640 \uBC84\uD2BC\uC774 \uD55C \uC138\uACC4\uC758 \uBB3C\uAC74\uC73C\uB85C \uBCF4\uC5EC\uC57C \uD569\uB2C8\uB2E4. \uB530\uB85C \uCE60\uD558\uBA74 \uC0C9\uC774 \uC548 \uB9DE\uC2B5\uB2C8\uB2E4.",
+  "\uD615\uD0DC\uB294 \uC774\uBBF8 \uC815\uD574\uC838 \uC788\uACE0 \uBC14\uAFC0 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uB2F9\uC2E0\uC774 \uC815\uD558\uB294 \uAC83\uC740 \uC0C9\uBFD0\uC785\uB2C8\uB2E4.",
+  "",
+  "\uC790\uB9AC \uC774\uB984\uC740 \uC55E\uC5D0 \uBB34\uC5C7\uC758 \uC790\uB9AC\uC778\uC9C0 \uBD99\uC5B4 \uC788\uC2B5\uB2C8\uB2E4.",
+  "  dice.* \uB294 \uC8FC\uC0AC\uC704, ui.* \uB294 \uBC84\uD2BC\uACFC \uD328\uB110\uC785\uB2C8\uB2E4.",
+  "  \uB458\uC758 outline \uC740 \uAD75\uAE30\uB3C4 \uC4F0\uC784\uB3C4 \uB2EC\uB77C \uAC19\uC740 \uC0C9\uC774 \uC544\uB2C8\uC5B4\uB3C4 \uB429\uB2C8\uB2E4.",
+  "",
+  "\uADDC\uCE59:",
+  "- \uADF8\uB9BC\uC744 \uADF8\uB9AC\uC9C0 \uB9C8\uC138\uC694. \uC0C9 \uBAA9\uB85D\uB9CC \uB3CC\uB824\uC90D\uB2C8\uB2E4.",
+  "- \uBC1B\uC740 \uC790\uB9AC\uB97C \uD558\uB098\uB3C4 \uBE60\uC9D0\uC5C6\uC774 \uB3CC\uB824\uC8FC\uC138\uC694. \uC5C6\uB294 \uC774\uB984\uC744 \uB9CC\uB4E4\uC9C0 \uB9C8\uC138\uC694.",
+  "- \uBC1D\uAE30 \uC21C\uC11C\uB97C \uC9C0\uD0A4\uC138\uC694.",
+  "  \uC8FC\uC0AC\uC704: dice.edge > dice.faceLit > dice.faceEdge > dice.faceShade > dice.outline",
+  "  \uBC84\uD2BC:   ui.halo > ui.bevelLit > ui.face > ui.bevelShade > ui.outline",
+  "  \uAE68\uC9C0\uBA74 \uC785\uCCB4\uAC10\uC774 \uC0AC\uB77C\uC838 \uB0A9\uC791\uD574 \uBCF4\uC785\uB2C8\uB2E4.",
+  "- \uC8FC\uC0AC\uC704 \uB208\uC740 \uBAB8\uD1B5\uACFC \uB69C\uB837\uD558\uAC8C \uB2EC\uB77C\uC57C \uD569\uB2C8\uB2E4. \uBE44\uC2B7\uD558\uBA74 \uBA87 \uAC1C\uC778\uC9C0 \uC548 \uC77D\uD799\uB2C8\uB2E4.",
+  "- \uBC84\uD2BC \uC704\uC5D0\uB294 \uAE00\uC790\uAC00 \uC62C\uB77C\uAC11\uB2C8\uB2E4. ui.face \uB294 \uAE00\uC790\uAC00 \uC77D\uD790 \uB9CC\uD07C \uACE0\uB978 \uC0C9\uC774\uC5B4\uC57C \uD569\uB2C8\uB2E4.",
+  '- hex \uB294 "#rrggbb" \uD615\uC2DD\uC785\uB2C8\uB2E4.'
+].join("\n");
 var BUTTONSET_INSTRUCTION = [
   "\uB2F9\uC2E0\uC740 \uD53D\uC140 \uC544\uD2B8 UI \uBC84\uD2BC\uC758 \uBC30\uC0C9\uC744 \uC815\uD558\uB294 \uC0AC\uB78C\uC785\uB2C8\uB2E4.",
   "",
@@ -36787,7 +36851,7 @@ function createGeminiHandler(config2) {
         return true;
       }
       const { genW, genH, factor } = planGeneration(w, h);
-      const mode = parsed.mode === "edit" || parsed.mode === "add" || parsed.mode === "recolor" || parsed.mode === "virtual" || parsed.mode === "diceset" || parsed.mode === "buttonset" ? parsed.mode : "create";
+      const mode = parsed.mode === "edit" || parsed.mode === "add" || parsed.mode === "recolor" || parsed.mode === "virtual" || parsed.mode === "diceset" || parsed.mode === "buttonset" || parsed.mode === "kit" ? parsed.mode : "create";
       let base;
       let baseDoc;
       if (mode !== "create" && isSpecLike(parsed.base)) {
@@ -36801,9 +36865,42 @@ function createGeminiHandler(config2) {
           return true;
         }
       }
-      const BAKED = ["diceset", "buttonset"];
+      const BAKED = ["diceset", "buttonset", "kit"];
       if (mode !== "create" && !BAKED.includes(mode) && base === void 0) {
         send(res, 400, { error: "\uC774 \uBAA8\uB4DC\uC5D0\uB294 \uAE30\uC874 \uADF8\uB9BC\uC774 \uD544\uC694\uD569\uB2C8\uB2E4." });
+        return true;
+      }
+      if (mode === "kit") {
+        const answer = await callGeminiRoles(config2, prompt, KIT_INSTRUCTION, KIT_ROLE_LIST, {
+          w: BUTTON_SIZE.w,
+          h: BUTTON_SIZE.h,
+          rows: BUTTON_ROWS,
+          note: "\uC704\uB294 \uBC84\uD2BC\uC785\uB2C8\uB2E4. \uC8FC\uC0AC\uC704\uB294 \uB530\uB85C \uC788\uACE0, \uAC19\uC740 \uC138\uACC4\uC758 \uBB3C\uAC74\uC73C\uB85C \uBCF4\uC5EC\uC57C \uD569\uB2C8\uB2E4."
+        });
+        const entries = answer.palette ?? [];
+        const missing = missingKitRoles(entries);
+        if (missing.length === KIT_ROLE_LIST.length) {
+          send(res, 502, {
+            error: "\uBAA8\uB378\uC774 \uBC30\uC0C9\uC744 \uB3CC\uB824\uC8FC\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uCEE8\uC149\uC744 \uB354 \uAD6C\uCCB4\uC801\uC73C\uB85C \uC801\uC5B4\uBCF4\uC138\uC694."
+          });
+          return true;
+        }
+        const sizes = {
+          button: {
+            w: Math.min(512, Math.max(BUTTON_SIZE.w, Number(parsed.w) || 96)),
+            h: Math.min(512, Math.max(BUTTON_SIZE.h, Number(parsed.h) || 32))
+          },
+          panel: { w: 160, h: 96 }
+        };
+        const kit = kitFromRoles(entries, sizes);
+        send(res, 200, {
+          name: (answer.name ?? "").trim() || prompt.slice(0, 12) || "\uD0A4\uD2B8",
+          dice: kit.dice.map((d) => ({ top: d.top, pips: d.pips, spec: d.spec })),
+          states: kit.button.map((b) => ({ state: b.state, spec: b.spec })),
+          panel: kit.panel,
+          warnings: missing.length > 0 ? [`${missing.join(", ")} \uB294 \uBAA8\uB378\uC774 \uBE60\uB728\uB824 \uC6D0\uB798 \uC0C9\uC744 \uC720\uC9C0\uD588\uC2B5\uB2C8\uB2E4.`] : [],
+          model: config2.model
+        });
         return true;
       }
       if (mode === "buttonset") {

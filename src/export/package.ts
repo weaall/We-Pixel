@@ -25,6 +25,19 @@ export interface PackageOptions {
   sheet?: ReadonlyArray<{ name: string; doc: PixelDoc }>
   /** 시트 한 줄에 몇 장. 0이면 한 줄로 늘어놓는다. */
   sheetColumns?: number
+  /**
+   * 텍스처를 여러 장 넣는다.
+   *
+   * 크기가 다른 것을 한 텍스처에 섞으면 안 된다. 칸이 가장 큰 것에 맞춰지고,
+   * 9-슬라이스 테두리는 칸 가장자리를 기준으로 하므로 작은 그림의 테두리가
+   * 엉뚱한 자리를 가리킨다.
+   */
+  extraSheets?: ReadonlyArray<{
+    assetName: string
+    items: ReadonlyArray<{ name: string; doc: PixelDoc }>
+    columns?: number
+    border?: UnityImportOptions['border']
+  }>
   /** 에셋 파일명 기준이 되는 이름. */
   assetName: string
   action: ActionSpec
@@ -116,6 +129,31 @@ export async function buildPackage(o: PackageOptions): Promise<PackageResult> {
   if (o.previewScale > 1) {
     const preview = await o.encodePng(mainDoc, o.previewScale)
     add(`preview/${assetName}@${o.previewScale}x.png`, preview)
+  }
+
+  // 크기가 다른 것은 텍스처를 나눈다.
+  for (const extra of o.extraSheets ?? []) {
+    if (extra.items.length === 0) continue
+    const packed = packAtlas(extra.items, { columns: extra.columns })
+    const extraName = sanitizeFileName(extra.assetName) || 'Extra'
+    add(`${assetFolder}/${extraName}.png`, await o.encodePng(packed.doc, 1))
+    add(
+      `${assetFolder}/${extraName}.png.meta`,
+      spriteSheetMeta(
+        { ...o.unity, border: extra.border },
+        packed.slices,
+        packed.doc.h,
+        newGuid(),
+      ),
+    )
+    warnings.push(
+      `${extraName}: ${packed.slices.length}장을 ${packed.doc.w}x${packed.doc.h} 시트로 묶었습니다.`,
+    )
+    if (o.includeSpec) {
+      for (const item of extra.items) {
+        add(`spec/${sanitizeFileName(item.name)}.spec.json`, JSON.stringify(toSpec(item.doc), null, 2))
+      }
+    }
   }
 
   add(

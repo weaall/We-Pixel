@@ -5,7 +5,8 @@ import { quantize } from '../src/core/quantize'
 import { packRows, usedColors } from '../src/core/codec'
 import { DICE_FRAMES, DICE_FRAME_SIZE } from '../src/core/generate/diceFrames'
 import { DICE_ROLE_LIST, diceSetSpecsFromRoles } from '../src/core/generate/diceSet'
-import { BUTTON_ROLE_LIST, buttonSetFromRoles, BUTTON_STATES } from '../src/core/generate/button'
+import { BUTTON_ROLE_LIST, buttonSetFromRoles } from '../src/core/generate/button'
+import { KIT_ROLE_LIST, kitFromRoles, missingKitRoles } from '../src/core/generate/kit'
 import { BUTTON_ROWS, BUTTON_SIZE } from '../src/core/generate/buttonFrame'
 import { parseHex } from '../src/core/color'
 import type { RGBA } from '../src/core/color'
@@ -129,6 +130,28 @@ export interface RawResult {
   rows?: string[]
 }
 
+const KIT_INSTRUCTION = [
+  '당신은 게임 UI 한 벌의 배색을 정하는 사람입니다.',
+  '',
+  '주사위와 버튼이 한 세계의 물건으로 보여야 합니다. 따로 칠하면 색이 안 맞습니다.',
+  '형태는 이미 정해져 있고 바꿀 수 없습니다. 당신이 정하는 것은 색뿐입니다.',
+  '',
+  '자리 이름은 앞에 무엇의 자리인지 붙어 있습니다.',
+  '  dice.* 는 주사위, ui.* 는 버튼과 패널입니다.',
+  '  둘의 outline 은 굵기도 쓰임도 달라 같은 색이 아니어도 됩니다.',
+  '',
+  '규칙:',
+  '- 그림을 그리지 마세요. 색 목록만 돌려줍니다.',
+  '- 받은 자리를 하나도 빠짐없이 돌려주세요. 없는 이름을 만들지 마세요.',
+  '- 밝기 순서를 지키세요.',
+  '  주사위: dice.edge > dice.faceLit > dice.faceEdge > dice.faceShade > dice.outline',
+  '  버튼:   ui.halo > ui.bevelLit > ui.face > ui.bevelShade > ui.outline',
+  '  깨지면 입체감이 사라져 납작해 보입니다.',
+  '- 주사위 눈은 몸통과 뚜렷하게 달라야 합니다. 비슷하면 몇 개인지 안 읽힙니다.',
+  '- 버튼 위에는 글자가 올라갑니다. ui.face 는 글자가 읽힐 만큼 고른 색이어야 합니다.',
+  '- hex 는 "#rrggbb" 형식입니다.',
+].join('\n')
+
 const BUTTONSET_INSTRUCTION = [
   '당신은 픽셀 아트 UI 버튼의 배색을 정하는 사람입니다.',
   '',
@@ -192,6 +215,15 @@ export interface DiceSetResponse {
   /** 컨셉 이름. 페이지 이름에 쓴다. */
   name: string
   dice: DiceSetItem[]
+  warnings: string[]
+  model: string
+}
+
+export interface KitResponse {
+  name: string
+  dice: Array<{ top: number; pips: [number, number, number]; spec: PixelSpec }>
+  states: Array<{ state: string; spec: PixelSpec }>
+  panel: PixelSpec
   warnings: string[]
   model: string
 }
@@ -455,6 +487,7 @@ export type GenerateMode =
   | 'virtual'
   | 'diceset'
   | 'buttonset'
+  | 'kit'
 
 /** 팔레트만 받아온다. 그리드를 요청하지 않으므로 모양이 바뀔 수 없다. */
 async function callGeminiPalette(
@@ -644,7 +677,8 @@ export function createGeminiHandler(config: ServerConfig): ApiHandler {
         parsed.mode === 'recolor' ||
         parsed.mode === 'virtual' ||
         parsed.mode === 'diceset' ||
-        parsed.mode === 'buttonset'
+        parsed.mode === 'buttonset' ||
+        parsed.mode === 'kit'
           ? parsed.mode
           : 'create'
 
@@ -664,9 +698,49 @@ export function createGeminiHandler(config: ServerConfig): ApiHandler {
         }
       }
       // 구워 둔 프레임을 쓰는 모드는 보낼 그림이 없다.
-      const BAKED: GenerateMode[] = ['diceset', 'buttonset']
+      const BAKED: GenerateMode[] = ['diceset', 'buttonset', 'kit']
       if (mode !== 'create' && !BAKED.includes(mode) && base === undefined) {
         send(res, 400, { error: '이 모드에는 기존 그림이 필요합니다.' })
+        return true
+      }
+
+      // 컨셉 하나로 키트 전체를 만든다.
+      if (mode === 'kit') {
+        const answer = await callGeminiRoles(config, prompt, KIT_INSTRUCTION, KIT_ROLE_LIST, {
+          w: BUTTON_SIZE.w,
+          h: BUTTON_SIZE.h,
+          rows: BUTTON_ROWS,
+          note: '위는 버튼입니다. 주사위는 따로 있고, 같은 세계의 물건으로 보여야 합니다.',
+        })
+        const entries = answer.palette ?? []
+        const missing = missingKitRoles(entries)
+        if (missing.length === KIT_ROLE_LIST.length) {
+          send(res, 502, {
+            error: '모델이 배색을 돌려주지 않았습니다. 컨셉을 더 구체적으로 적어보세요.',
+          })
+          return true
+        }
+
+        const sizes = {
+          button: {
+            w: Math.min(512, Math.max(BUTTON_SIZE.w, Number(parsed.w) || 96)),
+            h: Math.min(512, Math.max(BUTTON_SIZE.h, Number(parsed.h) || 32)),
+          },
+          panel: { w: 160, h: 96 },
+        }
+        const kit = kitFromRoles(entries, sizes)
+
+        send(res, 200, {
+          name: (answer.name ?? '').trim() || prompt.slice(0, 12) || '키트',
+          dice: kit.dice.map((d) => ({ top: d.top, pips: d.pips, spec: d.spec })),
+          states: kit.button.map((b) => ({ state: b.state, spec: b.spec })),
+          panel: kit.panel,
+          warnings:
+            missing.length > 0
+              ? [`${missing.join(', ')} 는 모델이 빠뜨려 원래 색을 유지했습니다.`]
+              : [],
+          model: config.model,
+        } satisfies KitResponse)
         return true
       }
 

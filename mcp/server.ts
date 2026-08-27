@@ -14,6 +14,17 @@ import {
   diceSetSpecsToned,
   diceSetSpecsFromRoles,
 } from '../src/core/generate/diceSet'
+import {
+  BUTTON_PRESETS,
+  BUTTON_ROLE_LIST,
+  BUTTON_STATES,
+  MIN_BUTTON_H,
+  MIN_BUTTON_W,
+  buttonSet,
+  buttonSetFromRoles,
+  defaultButtonTone,
+} from '../src/core/generate/button'
+import { BUTTON_BORDER } from '../src/core/generate/buttonFrame'
 import { defaultActionSpec } from '../src/export/csharp'
 import { buildPackage } from '../src/export/package'
 import { defaultImportOptions } from '../src/export/unityMeta'
@@ -217,6 +228,116 @@ server.registerTool(
 // ---------------------------------------------------------------------------
 // generate_sprite / generate_pattern — 알고리즘 생성. 시작점이나 배경용.
 // ---------------------------------------------------------------------------
+
+server.registerTool(
+  'generate_button',
+  {
+    title: '버튼 만들기',
+    description: [
+      '픽셀 아트 UI 버튼을 만든다. 기본/올림/눌림/꺼짐 네 상태가 한 벌로 나온다.',
+      '',
+      '9-슬라이스라 한 장으로 어떤 크기든 만든다. 가장자리는 그대로 두고 가운데만',
+      `늘린다 — 캡은 사방 ${BUTTON_BORDER.left}px 다. 통째로 늘리면 둥근 모서리가 뭉개진다.`,
+      '',
+      '세로로도 늘어나므로 같은 형태가 버튼도 되고 패널도, 창틀도 된다.',
+      '',
+      '자리마다 이름이 있다:',
+      ...BUTTON_ROLE_LIST.map((e) => `  ${e.role} (지금 ${e.hex})`),
+      '',
+      '밝기 순서를 지켜야 입체감이 산다: halo > bevelLit > face > bevelShade > outline.',
+      '',
+      `preset: ${BUTTON_PRESETS.map((p) => p.name).join(', ')}`,
+    ].join('\n'),
+    inputSchema: {
+      name: nameArg.describe('저장 이름의 접두어. "Wood" 면 Wood-normal ... 로 저장된다.'),
+      w: z.number().int().min(MIN_BUTTON_W).max(512).default(64).describe('가로 픽셀.'),
+      h: z.number().int().min(MIN_BUTTON_H).max(512).default(32).describe('세로 픽셀.'),
+      preset: z.string().optional().describe('미리 만들어 둔 조합 이름.'),
+      hue: z.number().min(0).max(360).default(213).describe('목표 색조. preset 이나 palette 가 있으면 무시된다.'),
+      saturationBoost: z
+        .number()
+        .min(0)
+        .max(1)
+        .default(0)
+        .describe('채도 더하기. 배율만으로는 회색을 색으로 만들 수 없다.'),
+      brightness: z.number().min(-0.3).max(0.3).default(0).describe('밝기 이동.'),
+      palette: z
+        .array(z.object({ char: z.string(), hex: z.string() }))
+        .optional()
+        .describe('직접 정한 배색. char 는 위 자리 이름, hex 는 "#rrggbb".'),
+      sheet: z
+        .boolean()
+        .default(false)
+        .describe('참이면 네 상태를 묶은 유니티 패키지도 내보낸다. 9-슬라이스 정보가 들어간다.'),
+    },
+  },
+  async ({ name, w, h, preset, hue, saturationBoost, brightness, palette, sheet }) => {
+    try {
+      const named = preset ? BUTTON_PRESETS.find((p) => p.name === preset) : undefined
+      if (preset && !named) {
+        return fail(
+          new Error(
+            `"${preset}" 는 없는 조합입니다. ${BUTTON_PRESETS.map((p) => p.name).join(', ')} 중에 고르세요.`,
+          ),
+        )
+      }
+
+      const set =
+        palette && palette.length > 0
+          ? buttonSetFromRoles(w, h, palette)
+          : buttonSet(w, h, named ? named.tone : { ...defaultButtonTone, hue, saturationBoost, brightness })
+
+      const saved: string[] = []
+      // spec 을 그대로 저장한다. toSpec 으로 다시 매기면 상태마다 문자가 달라진다.
+      for (const item of set) saved.push(await saveSpec(`${name}-${item.state}`, item.spec))
+
+      const preview = fromSpec(set[0].spec)
+      let sheetNote: string | null = null
+      if (sheet) {
+        const pkg = await buildPackage({
+          doc: preview,
+          sheet: set.map((item) => ({ name: `${name}_${item.state}`, doc: fromSpec(item.spec) })),
+          assetName: `${name}Button`,
+          action: defaultActionSpec,
+          unity: {
+            ...defaultImportOptions,
+            // 없으면 유니티가 통째로 늘려 둥근 모서리가 뭉개진다.
+            border: {
+              left: BUTTON_BORDER.left,
+              right: BUTTON_BORDER.right,
+              top: BUTTON_BORDER.top,
+              bottom: BUTTON_BORDER.bottom,
+            },
+          },
+          includePostprocessor: true,
+          includeSpec: true,
+          previewScale: 0,
+          encodePng: encodePngAsync,
+        })
+        sheetNote = `시트: ${await writeExport(pkg.filename, pkg.bytes)}`
+      }
+
+      const scale = previewScale(preview)
+      return {
+        content: [
+          {
+            type: 'text',
+            text: [
+              `${w}x${h} 버튼 네 상태를 만들었습니다.`,
+              ...BUTTON_STATES.map((state, i) => `  ${state} -> ${saved[i]}`),
+              ...(sheetNote ? [sheetNote] : []),
+              '형태는 네 상태가 모두 같습니다. 크기가 달라지면 눌렀을 때 옆 요소가 밀립니다.',
+              `아래 이미지는 기본 상태를 ${scale}배로 확대한 것입니다.`,
+            ].join('\n'),
+          },
+          { type: 'image', data: toBase64(encodePng(preview, scale)), mimeType: 'image/png' },
+        ],
+      }
+    } catch (err) {
+      return fail(err)
+    }
+  },
+)
 
 server.registerTool(
   'generate_dice_set',
