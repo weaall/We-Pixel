@@ -12,6 +12,13 @@ export interface UnityImportOptions {
   pixelsPerUnit: number
   /** 에셋을 넣을 폴더. AssetPostprocessor가 이 경로로 필터한다. */
   targetFolder: string
+  /**
+   * 늘리지 않고 그대로 두는 가장자리 폭 (9-슬라이스).
+   *
+   * 버튼처럼 가운데만 늘어나는 그림에 쓴다. 이것이 없으면 유니티가 통째로
+   * 늘려 둥근 모서리가 뭉개진다.
+   */
+  border?: { left: number; bottom: number; right: number; top: number }
 }
 
 export const defaultImportOptions: UnityImportOptions = {
@@ -95,7 +102,7 @@ export function spriteSheetMeta(
         `        height: ${s.h}`,
         '      alignment: 0',
         '      pivot: {x: 0.5, y: 0.5}',
-        '      border: {x: 0, y: 0, z: 0, w: 0}',
+        `      border: {x: ${opts.border?.left ?? 0}, y: ${opts.border?.bottom ?? 0}, z: ${opts.border?.right ?? 0}, w: ${opts.border?.top ?? 0}}`,
         '      outline: []',
         '      physicsShape: []',
         '      tessellationDetail: 0',
@@ -167,7 +174,7 @@ TextureImporter:
   alignment: 0
   spritePivot: {x: 0.5, y: 0.5}
   spritePixelsToUnits: ${opts.pixelsPerUnit}
-  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteBorder: {x: ${opts.border?.left ?? 0}, y: ${opts.border?.bottom ?? 0}, z: ${opts.border?.right ?? 0}, w: ${opts.border?.top ?? 0}}
   spriteGenerateFallbackPhysicsShape: 1
   alphaUsage: 1
   alphaIsTransparency: 1

@@ -46,3 +46,15 @@ npx tsx tools/build-frames.mts frames
 실루엣이 넓어지다 멈추는 첫 줄이 좌우 꼭짓점이고, 위면은 그 꼭짓점을 지나는
 마름모입니다. 눈 하나는 이어진 덩어리로 찾고, 덩어리가 덮은 칸들의 다수결로
 면을 정합니다 — 한 점만 보면 면 경계에 걸린 눈이 흔들립니다.
+
+## 버튼
+
+`button.png` 한 장입니다. 9-슬라이스라 가운데를 늘려 어떤 크기든 만듭니다 —
+32/64/96 을 따로 둘 필요가 없습니다.
+
+```bash
+npx tsx tools/build-buttons.mts frames/button.png
+```
+
+`src/core/generate/buttonFrame.ts` 가 다시 만들어집니다. 늘어나는 가운데를
+찾지 못하면 (9-슬라이스가 아니면) 멈춥니다.

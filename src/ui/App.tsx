@@ -11,6 +11,7 @@ import { clearRegion, contentRect, copyRegion, pasteAt } from '../core/selection
 import type { StampOptions, ToolId } from '../core/tools'
 import { defaultStampOptions } from '../core/tools'
 import { AiPanel } from './AiPanel'
+import { ButtonPanel } from './ButtonPanel'
 import { CanvasView } from './CanvasView'
 import { DiceSetPanel } from './DiceSetPanel'
 import { ExportPanel } from './ExportPanel'
@@ -60,6 +61,7 @@ type ModalId =
   | 'ai'
   | 'generate'
   | 'diceset'
+  | 'button'
   | 'import'
   | 'recolor'
   | 'workspace'
@@ -70,6 +72,7 @@ const RIGHT_RAIL: ReadonlyArray<{ id: ModalId; label: string; icon: ComponentTyp
   { id: 'ai', label: 'AI 생성', icon: IconSparkle },
   { id: 'generate', label: '색 변형', icon: IconDice },
   { id: 'diceset', label: '주사위 세트', icon: IconDice },
+  { id: 'button', label: '버튼', icon: IconResize },
   { id: 'import', label: '이미지 가져오기', icon: IconImage },
   { id: 'recolor', label: '색상 교체', icon: IconRecolor },
   { id: 'workspace', label: '디자인 저장소', icon: IconFolder },
@@ -695,6 +698,11 @@ export function App() {
       {modal === 'diceset' && (
         <Modal title="주사위 세트" onClose={() => setModal(null)}>
           <DiceSetPanel onGenerateMany={addPages} />
+        </Modal>
+      )}
+      {modal === 'button' && (
+        <Modal title="버튼" onClose={() => setModal(null)}>
+          <ButtonPanel onGenerateMany={addPages} />
         </Modal>
       )}
       {modal === 'import' && (
