@@ -3,6 +3,8 @@ import { fromSpec, toSpec, TRANSPARENT_CHAR } from '../src/core/codec'
 import { resample } from '../src/core/resample'
 import { quantize } from '../src/core/quantize'
 import { packRows, usedColors } from '../src/core/codec'
+import { DICE_FRAMES, DICE_FRAME_SIZE } from '../src/core/generate/diceFrames'
+import { dicePaletteList, diceSetSpecsFrom } from '../src/core/generate/diceSet'
 import { parseHex } from '../src/core/color'
 import type { RGBA } from '../src/core/color'
 import { replaceColors } from '../src/core/recolor'
@@ -125,9 +127,39 @@ export interface RawResult {
   rows?: string[]
 }
 
+const DICESET_INSTRUCTION = [
+  '당신은 주사위 세트의 배색을 정하는 사람입니다.',
+  '',
+  '형태는 이미 정해져 있고 바꿀 수 없습니다. 당신이 정하는 것은 색뿐입니다.',
+  '주사위 여섯 개가 이 배색 하나를 함께 씁니다 — 세트이므로 여섯 개가 같은',
+  '색이어야 합니다.',
+  '',
+  '규칙:',
+  '- 그림을 그리지 마세요. 색 목록만 돌려줍니다.',
+  '- 받은 char 를 하나도 빠짐없이, 그대로 돌려주세요. 새 char 를 만들지 마세요.',
+  '- 명암 관계를 유지하세요. 원본에서 어두웠던 색은 새 배합에서도 어두워야 합니다.',
+  '  이것이 깨지면 입체감이 사라져 주사위가 납작한 육각형으로 보입니다.',
+  '- 눈과 몸통은 뚜렷하게 달라야 합니다. 비슷하면 눈이 몇 개인지 읽히지 않습니다.',
+  '- hex 는 "#rrggbb" 형식입니다.',
+].join('\n')
+
 export interface VirtualVariant {
   name: string
   spec: PixelSpec
+}
+
+export interface DiceSetItem {
+  top: number
+  pips: [number, number, number]
+  spec: PixelSpec
+}
+
+export interface DiceSetResponse {
+  /** 컨셉 이름. 페이지 이름에 쓴다. */
+  name: string
+  dice: DiceSetItem[]
+  warnings: string[]
+  model: string
 }
 
 export interface VirtualResponse {
@@ -374,7 +406,7 @@ function describeBase(base: PixelSpec): string {
   ].join('\n')
 }
 
-export type GenerateMode = 'create' | 'edit' | 'add' | 'recolor' | 'virtual'
+export type GenerateMode = 'create' | 'edit' | 'add' | 'recolor' | 'virtual' | 'diceset'
 
 /** 팔레트만 받아온다. 그리드를 요청하지 않으므로 모양이 바뀔 수 없다. */
 async function callGeminiPalette(
@@ -426,6 +458,38 @@ async function callGeminiPaletteSet(
 
   const out = await generatePaletteSet(config, VIRTUAL_INSTRUCTION, user)
   return out.variants
+}
+
+async function callGeminiDiceSet(
+  config: ServerConfig,
+  prompt: string,
+): Promise<PaletteSetResult['variants'][number]> {
+  const list = dicePaletteList().map((e) => `  "${e.char}": "${e.hex}"`).join('\n')
+  // 대표로 6번 한 장만 보낸다. 몸통은 여섯 장이 공유하고 눈만 다르므로
+  // 여섯 장을 다 보내면 토큰만 여섯 배가 되고 알 수 있는 것은 같다.
+  const rows = packRows({
+    w: DICE_FRAME_SIZE.w,
+    h: DICE_FRAME_SIZE.h,
+    palette: {},
+    rows: DICE_FRAMES[6].rows,
+  })
+  const user = [
+    '현재 팔레트:',
+    list,
+    '',
+    `형태 (${DICE_FRAME_SIZE.w}x${DICE_FRAME_SIZE.h}, 반복을 접은 표기):`,
+    ...rows,
+    '',
+    '위는 눈이 6/2/3 인 한 장입니다. 나머지 다섯 장도 몸통은 같고 눈만 다릅니다.',
+    '',
+    `컨셉: ${prompt}`,
+    '이 컨셉에 맞는 배색 한 벌을 돌려주세요. name 에는 짧은 이름을 적으세요.',
+  ].join('\n')
+
+  const out = await generatePaletteSet(config, DICESET_INSTRUCTION, user)
+  const first = out.variants?.[0]
+  if (!first) throw new Error('모델이 배색을 돌려주지 않았습니다.')
+  return first
 }
 
 async function callGemini(
@@ -527,7 +591,8 @@ export function createGeminiHandler(config: ServerConfig): ApiHandler {
         parsed.mode === 'edit' ||
         parsed.mode === 'add' ||
         parsed.mode === 'recolor' ||
-        parsed.mode === 'virtual'
+        parsed.mode === 'virtual' ||
+        parsed.mode === 'diceset'
           ? parsed.mode
           : 'create'
 
@@ -546,8 +611,43 @@ export function createGeminiHandler(config: ServerConfig): ApiHandler {
           return true
         }
       }
-      if (mode !== 'create' && base === undefined) {
+      // 주사위 세트는 구워 둔 프레임을 쓰므로 보낼 그림이 없다.
+      if (mode !== 'create' && mode !== 'diceset' && base === undefined) {
         send(res, 400, { error: '이 모드에는 기존 그림이 필요합니다.' })
+        return true
+      }
+
+      // 컨셉 하나로 주사위 여섯 개를 만든다.
+      // 형태는 구워 둔 프레임이라 모델에게 보내지도, 받지도 않는다.
+      if (mode === 'diceset') {
+        const answer = await callGeminiDiceSet(config, prompt)
+        const dice = diceSetSpecsFrom(answer.palette ?? [])
+
+        const given = new Set(
+          (answer.palette ?? [])
+            .map((e) => (e.char ?? '').trim())
+            .filter((c) => c.length === 1),
+        )
+        const known = new Set(dicePaletteList().map((e) => e.char))
+        const missing = [...known].filter((c) => !given.has(c))
+
+        const notes: string[] = []
+        if (missing.length > 0) {
+          notes.push(`${missing.length}개 색은 모델이 빠뜨려 원래 값을 유지했습니다.`)
+        }
+        if (missing.length === known.size) {
+          send(res, 502, {
+            error: '모델이 배색을 돌려주지 않았습니다. 컨셉을 더 구체적으로 적어보세요.',
+          })
+          return true
+        }
+
+        send(res, 200, {
+          name: (answer.name ?? '').trim() || prompt.slice(0, 12) || '세트',
+          dice,
+          warnings: notes,
+          model: config.model,
+        } satisfies DiceSetResponse)
         return true
       }
 

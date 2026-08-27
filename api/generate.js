@@ -932,9 +932,43 @@ function packRow(row) {
   }
   return out;
 }
+function unpackRow(packed, w) {
+  let out = "";
+  for (let i = 0; i < packed.length; ) {
+    const ch = packed[i];
+    if (ch === RUN) throw new Error(`${RUN} \uC55E\uC5D0 \uBB38\uC790\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4: "${packed}"`);
+    i++;
+    if (packed[i] === RUN) {
+      i++;
+      let digits = "";
+      while (i < packed.length && packed[i] >= "0" && packed[i] <= "9") digits += packed[i++];
+      if (digits === "") throw new Error(`${RUN} \uB4A4\uC5D0 \uAC1C\uC218\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4: "${packed}"`);
+      const n = Number(digits);
+      if (out.length + n > w) {
+        throw new Error(`\uD589\uC774 w(${w})\uB97C \uB118\uC2B5\uB2C8\uB2E4: "${packed}"`);
+      }
+      out += ch.repeat(n);
+    } else {
+      out += ch;
+    }
+  }
+  if (out.length !== w) {
+    throw new Error(`\uD589 \uAE38\uC774\uAC00 ${out.length}\uC778\uB370 w\uB294 ${w}\uC785\uB2C8\uB2E4: "${packed}"`);
+  }
+  return out;
+}
 function packRows(spec) {
   if (!canPackRows(spec.palette)) throw new Error("\uD314\uB808\uD2B8\uAC00 \uC22B\uC790\uB97C \uC368\uC11C \uC811\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4");
   return spec.rows.map(packRow);
+}
+function unpackRows(packed, w) {
+  return packed.map((row, i) => {
+    try {
+      return unpackRow(row, w);
+    } catch (err) {
+      throw new Error(`${i}\uBC88 \uD589: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
 }
 function fromSpec(spec) {
   if (!Number.isInteger(spec.w) || !Number.isInteger(spec.h) || spec.w < 1 || spec.h < 1) {
@@ -1180,6 +1214,436 @@ function ditherMap(doc, out, palette, alphaThreshold) {
   }
 }
 
+// src/core/generate/diceFrames.ts
+var DICE_FRAME_SIZE = { w: 64, h: 64 };
+var DICE_PALETTE = {
+  "a": "#6b7076",
+  "b": "#403435",
+  "c": "#403f44",
+  "d": "#979aa1",
+  "e": "#696c73",
+  "f": "#362929",
+  "g": "#650020",
+  "h": "#860327",
+  ".": "transparent"
+};
+var DICE_FRAMES = {
+  1: {
+    pips: [1, 4, 5],
+    rows: [
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~28b~8.~28",
+      ".~28b~8.~28",
+      ".~24b~6d~4b~6.~24",
+      ".~24b~6d~4b~6.~24",
+      ".~20b~6d~4a~4d~4b~6.~20",
+      ".~20b~6d~4a~4d~4b~6.~20",
+      ".~16b~6d~4a~12d~4b~6.~16",
+      ".~16b~6d~4a~12d~4b~6.~16",
+      ".~12b~6d~4a~20d~4b~6.~12",
+      ".~12b~6d~4a~20d~4b~6.~12",
+      ".~10b~4d~4a~12f~4a~12d~4b~4.~10",
+      ".~10b~4d~4a~11fg~4fa~11d~4b~4.~10",
+      ".~10bbd~4a~13fghhhfa~13d~4bb.~10",
+      ".~10bbd~4a~14ghhha~14d~4bb.~10",
+      ".~10bbd~6a~28dde~4bb.~10",
+      ".~10bbd~6a~28dde~4bb.~10",
+      ".~10bbdda~4d~4a~20ddeec~4eebb.~10",
+      ".~10bbdda~4d~4a~20ddeec~4eebb.~10",
+      ".~10bbdda~8d~4a~12ddeec~8eebb.~10",
+      ".~10bbddafffa~4d~4a~12ddeec~4fffceebb.~10",
+      ".~10bbddfggga~8d~4a~4ddeec~8hhgfeebb.~10",
+      ".~10bbddfghhfa~7d~4a~4ddeec~7fhhgfeebb.~10",
+      ".~10bbddfghhfa~11d~4c~11fhhgfeebb.~10",
+      ".~10bbddaghha~7fffaad~4ccfffc~7gggceebb.~10",
+      ".~10bbdda~10fgggaaddeecchhgfc~10eebb.~10",
+      ".~10bbdda~10fghhfaddeecfhhgfc~10eebb.~10",
+      ".~10bbdda~10fghhfaddeecfhhgfc~10eebb.~10",
+      ".~10bbdda~11ghhaaddeeccgggccfffc~6eebb.~10",
+      ".~10bbdda~16ddeec~7hhgfc~5eebb.~10",
+      ".~10bbdda~16ddeec~6fhhgfc~5eebb.~10",
+      ".~10bbdda~16ddeec~6fhhgfc~5eebb.~10",
+      ".~10bbddafffa~12ddeec~7gggccfffceebb.~10",
+      ".~10bbddfggga~12ddeec~12hhgfeebb.~10",
+      ".~10bbddfghhfa~11ddeec~11fhhgfeebb.~10",
+      ".~10bbddfghhfa~11ddeec~11fhhgfeebb.~10",
+      ".~10bbddaghha~7fffaaddeeccfffc~7gggceebb.~10",
+      ".~10b~4d~4a~6fgggaaddeecchhgfc~6e~4b~4.~10",
+      ".~10b~4d~4a~6fghhfaddeecfhhgfc~6e~4b~4.~10",
+      ".~12b~6d~4aafghhfaddeecfhhgfcce~4b~6.~12",
+      ".~12b~6d~4aaaghhaaddeeccgggccce~4b~6.~12",
+      ".~16b~6d~4a~4ddeec~4e~4b~6.~16",
+      ".~16b~6d~4a~4ddeec~4e~4b~6.~16",
+      ".~20b~6d~6e~6b~6.~20",
+      ".~20b~6d~6e~6b~6.~20",
+      ".~24b~6ddeeb~6.~24",
+      ".~24b~6ddeeb~6.~24",
+      ".~28b~8.~28",
+      ".~28b~8.~28",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64"
+    ]
+  },
+  2: {
+    pips: [2, 3, 1],
+    rows: [
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~28b~8.~28",
+      ".~28b~8.~28",
+      ".~24b~6d~4b~6.~24",
+      ".~24b~6d~4b~6.~24",
+      ".~20b~6d~4a~4d~4b~6.~20",
+      ".~20b~6d~4a~4d~4b~6.~20",
+      ".~16b~6d~4a~12d~4b~6.~16",
+      ".~16b~6d~4a~12d~4b~6.~16",
+      ".~12b~6d~4a~20d~4b~6.~12",
+      ".~12b~6d~4a~20d~4b~6.~12",
+      ".~10b~4d~4aaf~4a~16f~4aad~4b~4.~10",
+      ".~10b~4d~4afg~4fa~14fg~4fad~4b~4.~10",
+      ".~10bbd~4aaafghhhfa~14fghhhfaaad~4bb.~10",
+      ".~10bbd~4a~4ghhha~16ghhha~4d~4bb.~10",
+      ".~10bbd~6a~28dde~4bb.~10",
+      ".~10bbd~6a~28dde~4bb.~10",
+      ".~10bbdda~4d~4a~20ddeec~4eebb.~10",
+      ".~10bbdda~4d~4a~20ddeec~4eebb.~10",
+      ".~10bbdda~8d~4a~12ddeec~8eebb.~10",
+      ".~10bbddafffa~4d~4a~12ddeec~8eebb.~10",
+      ".~10bbddfggga~8d~4a~4ddeec~12eebb.~10",
+      ".~10bbddfghhfa~7d~4a~4ddeec~12eebb.~10",
+      ".~10bbddfghhfa~11d~4c~16eebb.~10",
+      ".~10bbddaghha~12d~4c~16eebb.~10",
+      ".~10bbdda~16ddeec~16eebb.~10",
+      ".~10bbdda~16ddeec~16eebb.~10",
+      ".~10bbdda~16ddeec~16eebb.~10",
+      ".~10bbdda~6fffa~7ddeec~7fffc~6eebb.~10",
+      ".~10bbdda~5fggga~7ddeec~7hhgfc~5eebb.~10",
+      ".~10bbdda~5fghhfa~6ddeec~6fhhgfc~5eebb.~10",
+      ".~10bbdda~5fghhfa~6ddeec~6fhhgfc~5eebb.~10",
+      ".~10bbdda~6ghha~7ddeec~7gggc~6eebb.~10",
+      ".~10bbdda~16ddeec~16eebb.~10",
+      ".~10bbdda~16ddeec~16eebb.~10",
+      ".~10bbdda~16ddeec~16eebb.~10",
+      ".~10bbdda~11fffaaddeec~16eebb.~10",
+      ".~10b~4d~4a~6fgggaaddeec~12e~4b~4.~10",
+      ".~10b~4d~4a~6fghhfaddeec~12e~4b~4.~10",
+      ".~12b~6d~4aafghhfaddeec~8e~4b~6.~12",
+      ".~12b~6d~4aaaghhaaddeec~8e~4b~6.~12",
+      ".~16b~6d~4a~4ddeec~4e~4b~6.~16",
+      ".~16b~6d~4a~4ddeec~4e~4b~6.~16",
+      ".~20b~6d~6e~6b~6.~20",
+      ".~20b~6d~6e~6b~6.~20",
+      ".~24b~6ddeeb~6.~24",
+      ".~24b~6ddeeb~6.~24",
+      ".~28b~8.~28",
+      ".~28b~8.~28",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64"
+    ]
+  },
+  3: {
+    pips: [3, 5, 1],
+    rows: [
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~28b~8.~28",
+      ".~28b~8.~28",
+      ".~24b~6d~4b~6.~24",
+      ".~24b~6d~4b~6.~24",
+      ".~20b~6d~4a~4d~4b~6.~20",
+      ".~20b~6d~4a~4d~4b~6.~20",
+      ".~16b~6d~4a~12d~4b~6.~16",
+      ".~16b~6d~4a~12d~4b~6.~16",
+      ".~12b~6d~4a~20d~4b~6.~12",
+      ".~12b~6d~4a~20d~4b~6.~12",
+      ".~10b~4d~4aaf~4a~6f~4a~6f~4aad~4b~4.~10",
+      ".~10b~4d~4afg~4fa~4fg~4fa~4fg~4fad~4b~4.~10",
+      ".~10bbd~4aaafghhhfa~4fghhhfa~4fhhhgfaaad~4bb.~10",
+      ".~10bbd~4a~4ghhha~6ghhha~6hhhga~4d~4bb.~10",
+      ".~10bbd~6a~28dde~4bb.~10",
+      ".~10bbd~6a~28dde~4bb.~10",
+      ".~10bbdda~4d~4a~20ddeec~4eebb.~10",
+      ".~10bbdda~4d~4a~20ddeec~4eebb.~10",
+      ".~10bbdda~8d~4a~12ddeec~8eebb.~10",
+      ".~10bbddafffa~4d~4a~12ddeec~8eebb.~10",
+      ".~10bbddfggga~8d~4a~4ddeec~12eebb.~10",
+      ".~10bbddfghhfa~7d~4a~4ddeec~12eebb.~10",
+      ".~10bbddfghhfa~11d~4c~16eebb.~10",
+      ".~10bbddaghha~7fffaad~4c~16eebb.~10",
+      ".~10bbdda~10fgggaaddeec~16eebb.~10",
+      ".~10bbdda~10fghhfaddeec~16eebb.~10",
+      ".~10bbdda~10fghhfaddeec~16eebb.~10",
+      ".~10bbdda~6fffaaghhaaddeec~7fffc~6eebb.~10",
+      ".~10bbdda~5fggga~7ddeec~7hhgfc~5eebb.~10",
+      ".~10bbdda~5fghhfa~6ddeec~6fhhgfc~5eebb.~10",
+      ".~10bbdda~5fghhfa~6ddeec~6fhhgfc~5eebb.~10",
+      ".~10bbddafffaaghha~7ddeec~7gggc~6eebb.~10",
+      ".~10bbddfggga~12ddeec~16eebb.~10",
+      ".~10bbddfghhfa~11ddeec~16eebb.~10",
+      ".~10bbddfghhfa~11ddeec~16eebb.~10",
+      ".~10bbddaghha~7fffaaddeec~16eebb.~10",
+      ".~10b~4d~4a~6fgggaaddeec~12e~4b~4.~10",
+      ".~10b~4d~4a~6fghhfaddeec~12e~4b~4.~10",
+      ".~12b~6d~4aafghhfaddeec~8e~4b~6.~12",
+      ".~12b~6d~4aaaghhaaddeec~8e~4b~6.~12",
+      ".~16b~6d~4a~4ddeec~4e~4b~6.~16",
+      ".~16b~6d~4a~4ddeec~4e~4b~6.~16",
+      ".~20b~6d~6e~6b~6.~20",
+      ".~20b~6d~6e~6b~6.~20",
+      ".~24b~6ddeeb~6.~24",
+      ".~24b~6ddeeb~6.~24",
+      ".~28b~8.~28",
+      ".~28b~8.~28",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64"
+    ]
+  },
+  4: {
+    pips: [4, 6, 2],
+    rows: [
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~28b~8.~28",
+      ".~28b~8.~28",
+      ".~24b~6d~4b~6.~24",
+      ".~24b~6d~4b~6.~24",
+      ".~20b~6d~4f~4d~4b~6.~20",
+      ".~20b~6dddfg~4fdddb~6.~20",
+      ".~16b~6d~4aaafghhhfaaad~4b~6.~16",
+      ".~16b~6d~4a~4ghhha~4d~4b~6.~16",
+      ".~12b~6d~4a~20d~4b~6.~12",
+      ".~12b~6d~4a~20d~4b~6.~12",
+      ".~10b~4d~4aaf~4a~16f~4aad~4b~4.~10",
+      ".~10b~4d~4afg~4fa~14fg~4fad~4b~4.~10",
+      ".~10bbd~4aaafghhhfa~14fhhhgfaaad~4bb.~10",
+      ".~10bbd~4a~4ghhha~16hhhga~4d~4bb.~10",
+      ".~10bbd~6a~28dde~4bb.~10",
+      ".~10bbd~6a~28dde~4bb.~10",
+      ".~10bbdda~4d~4a~8f~4a~8ddeec~4eebb.~10",
+      ".~10bbdda~4d~4a~7fg~4fa~7ddeec~4eebb.~10",
+      ".~10bbdda~8d~4aaafghhhfaaaddeec~8eebb.~10",
+      ".~10bbddafffa~4d~4a~4ghhha~4ddeec~8eebb.~10",
+      ".~10bbddfggga~8d~4a~4ddeec~12eebb.~10",
+      ".~10bbddfghhfa~7d~4a~4ddeec~12eebb.~10",
+      ".~10bbddfghhfa~11d~4c~16eebb.~10",
+      ".~10bbddaghha~7fffaad~4ccfffc~11eebb.~10",
+      ".~10bbdda~10fgggaaddeecchhgfc~10eebb.~10",
+      ".~10bbddafffa~6fghhfaddeecfhhgfc~10eebb.~10",
+      ".~10bbddfggga~6fghhfaddeecfhhgfc~10eebb.~10",
+      ".~10bbddfghhfa~6ghhaaddeeccgggc~11eebb.~10",
+      ".~10bbddfghhfa~11ddeec~16eebb.~10",
+      ".~10bbddaghha~7fffaaddeec~16eebb.~10",
+      ".~10bbdda~10fgggaaddeec~16eebb.~10",
+      ".~10bbddafffa~6fghhfaddeec~12fffceebb.~10",
+      ".~10bbddfggga~6fghhfaddeec~12hhgfeebb.~10",
+      ".~10bbddfghhfa~6ghhaaddeec~11fhhgfeebb.~10",
+      ".~10bbddfghhfa~11ddeec~11fhhgfeebb.~10",
+      ".~10bbddaghha~7fffaaddeec~12gggceebb.~10",
+      ".~10b~4d~4a~6fgggaaddeec~12e~4b~4.~10",
+      ".~10b~4d~4a~6fghhfaddeec~12e~4b~4.~10",
+      ".~12b~6d~4aafghhfaddeec~8e~4b~6.~12",
+      ".~12b~6d~4aaaghhaaddeec~8e~4b~6.~12",
+      ".~16b~6d~4a~4ddeec~4e~4b~6.~16",
+      ".~16b~6d~4a~4ddeec~4e~4b~6.~16",
+      ".~20b~6d~6e~6b~6.~20",
+      ".~20b~6d~6e~6b~6.~20",
+      ".~24b~6ddeeb~6.~24",
+      ".~24b~6ddeeb~6.~24",
+      ".~28b~8.~28",
+      ".~28b~8.~28",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64"
+    ]
+  },
+  5: {
+    pips: [5, 6, 4],
+    rows: [
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~28b~8.~28",
+      ".~28b~8.~28",
+      ".~24b~6d~4b~6.~24",
+      ".~24b~6d~4b~6.~24",
+      ".~20b~6d~4f~4d~4b~6.~20",
+      ".~20b~6dddfg~4fdddb~6.~20",
+      ".~16b~6d~4aaafghhhfaaad~4b~6.~16",
+      ".~16b~6d~4a~4ghhha~4d~4b~6.~16",
+      ".~12b~6d~4a~20d~4b~6.~12",
+      ".~12b~6d~4a~20d~4b~6.~12",
+      ".~10b~4d~4aaf~4a~6f~4a~6f~4aad~4b~4.~10",
+      ".~10b~4d~4afg~4fa~4fg~4fa~4fg~4fad~4b~4.~10",
+      ".~10bbd~4aaafghhhfa~4fghhhfa~4fhhhgfaaad~4bb.~10",
+      ".~10bbd~4a~4ghhha~6ghhha~6hhhga~4d~4bb.~10",
+      ".~10bbd~6a~28dde~4bb.~10",
+      ".~10bbd~6a~28dde~4bb.~10",
+      ".~10bbdda~4d~4a~8f~4a~8ddeec~4eebb.~10",
+      ".~10bbdda~4d~4a~7fg~4fa~7ddeec~4eebb.~10",
+      ".~10bbdda~8d~4aaafghhhfaaaddeec~8eebb.~10",
+      ".~10bbddafffa~4d~4a~4ghhha~4ddeec~4fffceebb.~10",
+      ".~10bbddfggga~8d~4a~4ddeec~8hhgfeebb.~10",
+      ".~10bbddfghhfa~7d~4a~4ddeec~7fhhgfeebb.~10",
+      ".~10bbddfghhfa~11d~4c~11fhhgfeebb.~10",
+      ".~10bbddaghha~7fffaad~4ccfffc~7gggceebb.~10",
+      ".~10bbdda~10fgggaaddeecchhgfc~10eebb.~10",
+      ".~10bbddafffa~6fghhfaddeecfhhgfc~10eebb.~10",
+      ".~10bbddfggga~6fghhfaddeecfhhgfc~10eebb.~10",
+      ".~10bbddfghhfa~6ghhaaddeeccgggc~11eebb.~10",
+      ".~10bbddfghhfa~11ddeec~16eebb.~10",
+      ".~10bbddaghha~7fffaaddeec~16eebb.~10",
+      ".~10bbdda~10fgggaaddeec~16eebb.~10",
+      ".~10bbddafffa~6fghhfaddeec~12fffceebb.~10",
+      ".~10bbddfggga~6fghhfaddeec~12hhgfeebb.~10",
+      ".~10bbddfghhfa~6ghhaaddeec~11fhhgfeebb.~10",
+      ".~10bbddfghhfa~11ddeec~11fhhgfeebb.~10",
+      ".~10bbddaghha~7fffaaddeeccfffc~7gggceebb.~10",
+      ".~10b~4d~4a~6fgggaaddeecchhgfc~6e~4b~4.~10",
+      ".~10b~4d~4a~6fghhfaddeecfhhgfc~6e~4b~4.~10",
+      ".~12b~6d~4aafghhfaddeecfhhgfcce~4b~6.~12",
+      ".~12b~6d~4aaaghhaaddeeccgggccce~4b~6.~12",
+      ".~16b~6d~4a~4ddeec~4e~4b~6.~16",
+      ".~16b~6d~4a~4ddeec~4e~4b~6.~16",
+      ".~20b~6d~6e~6b~6.~20",
+      ".~20b~6d~6e~6b~6.~20",
+      ".~24b~6ddeeb~6.~24",
+      ".~24b~6ddeeb~6.~24",
+      ".~28b~8.~28",
+      ".~28b~8.~28",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64"
+    ]
+  },
+  6: {
+    pips: [6, 2, 3],
+    rows: [
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~28b~8.~28",
+      ".~28b~8.~28",
+      ".~24b~6d~4b~6.~24",
+      ".~24b~6d~4b~6.~24",
+      ".~20b~6d~4f~4d~4b~6.~20",
+      ".~20b~6dddfg~4fdddb~6.~20",
+      ".~16b~6d~4aaafghhhfaaad~4b~6.~16",
+      ".~16b~6dddf~4aghhha~4d~4b~6.~16",
+      ".~12b~6d~4aafg~4fa~12d~4b~6.~12",
+      ".~12b~6d~4aafghhhfa~12d~4b~6.~12",
+      ".~10b~4d~4aaf~4aghhha~11f~4aad~4b~4.~10",
+      ".~10b~4d~4afg~4fa~14fg~4fad~4b~4.~10",
+      ".~10bbd~4aaafghhhfa~14fhhhgfaaad~4bb.~10",
+      ".~10bbd~4a~4ghhha~11f~4ahhhga~4d~4bb.~10",
+      ".~10bbd~6a~16fg~4fa~6dde~4bb.~10",
+      ".~10bbd~6a~16fghhhfa~6dde~4bb.~10",
+      ".~10bbdda~4d~4a~8f~4aghhhaaaddeec~4eebb.~10",
+      ".~10bbdda~4d~4a~7fg~4fa~7ddeec~4eebb.~10",
+      ".~10bbdda~8d~4aaafghhhfaaaddeec~8eebb.~10",
+      ".~10bbddafffa~4d~4a~4ghhha~4ddeec~8eebb.~10",
+      ".~10bbddfggga~8d~4a~4ddeec~12eebb.~10",
+      ".~10bbddfghhfa~7d~4a~4ddeec~12eebb.~10",
+      ".~10bbddfghhfa~11d~4c~16eebb.~10",
+      ".~10bbddaghha~12d~4ccfffc~11eebb.~10",
+      ".~10bbdda~16ddeecchhgfc~10eebb.~10",
+      ".~10bbdda~16ddeecfhhgfc~10eebb.~10",
+      ".~10bbdda~16ddeecfhhgfc~10eebb.~10",
+      ".~10bbdda~16ddeeccgggccfffc~6eebb.~10",
+      ".~10bbdda~16ddeec~7hhgfc~5eebb.~10",
+      ".~10bbdda~16ddeec~6fhhgfc~5eebb.~10",
+      ".~10bbdda~16ddeec~6fhhgfc~5eebb.~10",
+      ".~10bbdda~16ddeec~7gggccfffceebb.~10",
+      ".~10bbdda~16ddeec~12hhgfeebb.~10",
+      ".~10bbdda~16ddeec~11fhhgfeebb.~10",
+      ".~10bbdda~16ddeec~11fhhgfeebb.~10",
+      ".~10bbdda~11fffaaddeec~12gggceebb.~10",
+      ".~10b~4d~4a~6fgggaaddeec~12e~4b~4.~10",
+      ".~10b~4d~4a~6fghhfaddeec~12e~4b~4.~10",
+      ".~12b~6d~4aafghhfaddeec~8e~4b~6.~12",
+      ".~12b~6d~4aaaghhaaddeec~8e~4b~6.~12",
+      ".~16b~6d~4a~4ddeec~4e~4b~6.~16",
+      ".~16b~6d~4a~4ddeec~4e~4b~6.~16",
+      ".~20b~6d~6e~6b~6.~20",
+      ".~20b~6d~6e~6b~6.~20",
+      ".~24b~6ddeeb~6.~24",
+      ".~24b~6ddeeb~6.~24",
+      ".~28b~8.~28",
+      ".~28b~8.~28",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64",
+      ".~64"
+    ]
+  }
+};
+
 // src/core/recolor.ts
 function replaceColors(doc, mappings, tolerance = 0) {
   const next = { w: doc.w, h: doc.h, data: new Uint8ClampedArray(doc.data) };
@@ -1214,6 +1678,61 @@ function matchesAt(doc, i, from, tolerance) {
     return dr === 0 && dg === 0 && db === 0 && alpha === from[3];
   }
   return dr * dr + dg * dg + db * db <= tolerance * tolerance;
+}
+
+// src/core/generate/variants.ts
+var defaultVariantOptions = {
+  hue: 30,
+  saturation: 1,
+  contrast: 1,
+  brightness: 0,
+  keepNeutral: true
+};
+var defaultVariantSetOptions = {
+  ...defaultVariantOptions,
+  count: 4,
+  step: 0
+};
+
+// src/core/generate/diceSet.ts
+var DICE_TOPS = [1, 2, 3, 4, 5, 6];
+function diceSpec(top, palette = DICE_PALETTE) {
+  const frame = DICE_FRAMES[top];
+  if (!frame) throw new Error(`${top} \uBC88 \uC8FC\uC0AC\uC704 \uD504\uB808\uC784\uC774 \uC5C6\uC2B5\uB2C8\uB2E4`);
+  return {
+    w: DICE_FRAME_SIZE.w,
+    h: DICE_FRAME_SIZE.h,
+    palette,
+    rows: unpackRows(frame.rows, DICE_FRAME_SIZE.w)
+  };
+}
+function diceSetPaletteFrom(entries) {
+  const palette = { ...DICE_PALETTE };
+  for (const entry of entries) {
+    const char = (entry.char ?? "").trim();
+    const hex4 = (entry.hex ?? "").trim();
+    if (char.length !== 1 || palette[char] === void 0 || palette[char] === "transparent") continue;
+    if (!/^#[0-9a-fA-F]{6}$/.test(hex4)) continue;
+    palette[char] = hex4;
+  }
+  return palette;
+}
+function diceSetSpecsFrom(entries) {
+  const palette = diceSetPaletteFrom(entries);
+  return DICE_TOPS.map((top) => ({
+    top,
+    pips: DICE_FRAMES[top].pips,
+    spec: diceSpec(top, palette)
+  }));
+}
+function dicePaletteList() {
+  const counts = /* @__PURE__ */ new Map();
+  for (const top of DICE_TOPS) {
+    for (const row of unpackRows(DICE_FRAMES[top].rows, DICE_FRAME_SIZE.w)) {
+      for (const ch of row) counts.set(ch, (counts.get(ch) ?? 0) + 1);
+    }
+  }
+  return Object.entries(DICE_PALETTE).filter(([, hex4]) => hex4 !== "transparent").map(([char, hex4]) => ({ char, hex: hex4, n: counts.get(char) ?? 0 })).sort((a, b) => b.n - a.n).map(({ char, hex: hex4 }) => ({ char, hex: hex4 }));
 }
 
 // src/core/compose.ts
@@ -35765,6 +36284,21 @@ var VIRTUAL_INSTRUCTION = [
   '\uADF8\uB9BC\uC740 \uBC18\uBCF5\uC744 \uC811\uC740 \uD45C\uAE30\uB85C \uC90D\uB2C8\uB2E4. "a~10" \uC740 a\uAC00 10\uCE78 \uC774\uC5B4\uC9C4\uB2E4\uB294 \uB73B\uC785\uB2C8\uB2E4.',
   "\uC5B4\uB290 char\uAC00 \uB113\uC740 \uBA74\uC774\uACE0 \uC5B4\uB290 char\uAC00 \uC881\uC740 \uC7A5\uC2DD\uC778\uC9C0 \uC5EC\uAE30\uC11C \uC77D\uC5B4\uB0B4\uC138\uC694."
 ].join("\n");
+var DICESET_INSTRUCTION = [
+  "\uB2F9\uC2E0\uC740 \uC8FC\uC0AC\uC704 \uC138\uD2B8\uC758 \uBC30\uC0C9\uC744 \uC815\uD558\uB294 \uC0AC\uB78C\uC785\uB2C8\uB2E4.",
+  "",
+  "\uD615\uD0DC\uB294 \uC774\uBBF8 \uC815\uD574\uC838 \uC788\uACE0 \uBC14\uAFC0 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uB2F9\uC2E0\uC774 \uC815\uD558\uB294 \uAC83\uC740 \uC0C9\uBFD0\uC785\uB2C8\uB2E4.",
+  "\uC8FC\uC0AC\uC704 \uC5EC\uC12F \uAC1C\uAC00 \uC774 \uBC30\uC0C9 \uD558\uB098\uB97C \uD568\uAED8 \uC501\uB2C8\uB2E4 \u2014 \uC138\uD2B8\uC774\uBBC0\uB85C \uC5EC\uC12F \uAC1C\uAC00 \uAC19\uC740",
+  "\uC0C9\uC774\uC5B4\uC57C \uD569\uB2C8\uB2E4.",
+  "",
+  "\uADDC\uCE59:",
+  "- \uADF8\uB9BC\uC744 \uADF8\uB9AC\uC9C0 \uB9C8\uC138\uC694. \uC0C9 \uBAA9\uB85D\uB9CC \uB3CC\uB824\uC90D\uB2C8\uB2E4.",
+  "- \uBC1B\uC740 char \uB97C \uD558\uB098\uB3C4 \uBE60\uC9D0\uC5C6\uC774, \uADF8\uB300\uB85C \uB3CC\uB824\uC8FC\uC138\uC694. \uC0C8 char \uB97C \uB9CC\uB4E4\uC9C0 \uB9C8\uC138\uC694.",
+  "- \uBA85\uC554 \uAD00\uACC4\uB97C \uC720\uC9C0\uD558\uC138\uC694. \uC6D0\uBCF8\uC5D0\uC11C \uC5B4\uB450\uC6E0\uB358 \uC0C9\uC740 \uC0C8 \uBC30\uD569\uC5D0\uC11C\uB3C4 \uC5B4\uB450\uC6CC\uC57C \uD569\uB2C8\uB2E4.",
+  "  \uC774\uAC83\uC774 \uAE68\uC9C0\uBA74 \uC785\uCCB4\uAC10\uC774 \uC0AC\uB77C\uC838 \uC8FC\uC0AC\uC704\uAC00 \uB0A9\uC791\uD55C \uC721\uAC01\uD615\uC73C\uB85C \uBCF4\uC785\uB2C8\uB2E4.",
+  "- \uB208\uACFC \uBAB8\uD1B5\uC740 \uB69C\uB837\uD558\uAC8C \uB2EC\uB77C\uC57C \uD569\uB2C8\uB2E4. \uBE44\uC2B7\uD558\uBA74 \uB208\uC774 \uBA87 \uAC1C\uC778\uC9C0 \uC77D\uD788\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.",
+  '- hex \uB294 "#rrggbb" \uD615\uC2DD\uC785\uB2C8\uB2E4.'
+].join("\n");
 function fitRow(row, w) {
   if (row.length === w) return row;
   if (row.length > w) {
@@ -35935,6 +36469,31 @@ async function callGeminiPaletteSet(config2, prompt, plan, preview, count) {
   const out = await generatePaletteSet(config2, VIRTUAL_INSTRUCTION, user);
   return out.variants;
 }
+async function callGeminiDiceSet(config2, prompt) {
+  const list = dicePaletteList().map((e) => `  "${e.char}": "${e.hex}"`).join("\n");
+  const rows = packRows({
+    w: DICE_FRAME_SIZE.w,
+    h: DICE_FRAME_SIZE.h,
+    palette: {},
+    rows: DICE_FRAMES[6].rows
+  });
+  const user = [
+    "\uD604\uC7AC \uD314\uB808\uD2B8:",
+    list,
+    "",
+    `\uD615\uD0DC (${DICE_FRAME_SIZE.w}x${DICE_FRAME_SIZE.h}, \uBC18\uBCF5\uC744 \uC811\uC740 \uD45C\uAE30):`,
+    ...rows,
+    "",
+    "\uC704\uB294 \uB208\uC774 6/2/3 \uC778 \uD55C \uC7A5\uC785\uB2C8\uB2E4. \uB098\uBA38\uC9C0 \uB2E4\uC12F \uC7A5\uB3C4 \uBAB8\uD1B5\uC740 \uAC19\uACE0 \uB208\uB9CC \uB2E4\uB985\uB2C8\uB2E4.",
+    "",
+    `\uCEE8\uC149: ${prompt}`,
+    "\uC774 \uCEE8\uC149\uC5D0 \uB9DE\uB294 \uBC30\uC0C9 \uD55C \uBC8C\uC744 \uB3CC\uB824\uC8FC\uC138\uC694. name \uC5D0\uB294 \uC9E7\uC740 \uC774\uB984\uC744 \uC801\uC73C\uC138\uC694."
+  ].join("\n");
+  const out = await generatePaletteSet(config2, DICESET_INSTRUCTION, user);
+  const first = out.variants?.[0];
+  if (!first) throw new Error("\uBAA8\uB378\uC774 \uBC30\uC0C9\uC744 \uB3CC\uB824\uC8FC\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.");
+  return first;
+}
 async function callGemini(config2, prompt, w, h, mode, base) {
   const system = base === void 0 ? SYSTEM_INSTRUCTION : mode === "add" ? ADD_INSTRUCTION : EDIT_INSTRUCTION;
   const user = base === void 0 ? `${w}x${h} \uD53D\uC140 \uC544\uD2B8\uB85C \uADF8\uB824\uC8FC\uC138\uC694: ${prompt}` : mode === "add" ? [
@@ -35992,7 +36551,7 @@ function createGeminiHandler(config2) {
         return true;
       }
       const { genW, genH, factor } = planGeneration(w, h);
-      const mode = parsed.mode === "edit" || parsed.mode === "add" || parsed.mode === "recolor" || parsed.mode === "virtual" ? parsed.mode : "create";
+      const mode = parsed.mode === "edit" || parsed.mode === "add" || parsed.mode === "recolor" || parsed.mode === "virtual" || parsed.mode === "diceset" ? parsed.mode : "create";
       let base;
       let baseDoc;
       if (mode !== "create" && isSpecLike(parsed.base)) {
@@ -36006,8 +36565,34 @@ function createGeminiHandler(config2) {
           return true;
         }
       }
-      if (mode !== "create" && base === void 0) {
+      if (mode !== "create" && mode !== "diceset" && base === void 0) {
         send(res, 400, { error: "\uC774 \uBAA8\uB4DC\uC5D0\uB294 \uAE30\uC874 \uADF8\uB9BC\uC774 \uD544\uC694\uD569\uB2C8\uB2E4." });
+        return true;
+      }
+      if (mode === "diceset") {
+        const answer = await callGeminiDiceSet(config2, prompt);
+        const dice = diceSetSpecsFrom(answer.palette ?? []);
+        const given = new Set(
+          (answer.palette ?? []).map((e) => (e.char ?? "").trim()).filter((c) => c.length === 1)
+        );
+        const known = new Set(dicePaletteList().map((e) => e.char));
+        const missing = [...known].filter((c) => !given.has(c));
+        const notes = [];
+        if (missing.length > 0) {
+          notes.push(`${missing.length}\uAC1C \uC0C9\uC740 \uBAA8\uB378\uC774 \uBE60\uB728\uB824 \uC6D0\uB798 \uAC12\uC744 \uC720\uC9C0\uD588\uC2B5\uB2C8\uB2E4.`);
+        }
+        if (missing.length === known.size) {
+          send(res, 502, {
+            error: "\uBAA8\uB378\uC774 \uBC30\uC0C9\uC744 \uB3CC\uB824\uC8FC\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uCEE8\uC149\uC744 \uB354 \uAD6C\uCCB4\uC801\uC73C\uB85C \uC801\uC5B4\uBCF4\uC138\uC694."
+          });
+          return true;
+        }
+        send(res, 200, {
+          name: (answer.name ?? "").trim() || prompt.slice(0, 12) || "\uC138\uD2B8",
+          dice,
+          warnings: notes,
+          model: config2.model
+        });
         return true;
       }
       if (mode === "virtual" && baseDoc !== void 0 && base !== void 0) {

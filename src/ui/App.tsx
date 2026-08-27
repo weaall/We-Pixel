@@ -12,6 +12,7 @@ import type { StampOptions, ToolId } from '../core/tools'
 import { defaultStampOptions } from '../core/tools'
 import { AiPanel } from './AiPanel'
 import { CanvasView } from './CanvasView'
+import { DiceSetPanel } from './DiceSetPanel'
 import { ExportPanel } from './ExportPanel'
 import { GeneratePanel } from './GeneratePanel'
 import type { IconProps } from './icons'
@@ -55,11 +56,20 @@ const SHORTCUT_TOOLS: Record<string, ToolId> = {
   s: 'select',
 }
 
-type ModalId = 'ai' | 'generate' | 'import' | 'recolor' | 'workspace' | 'export' | 'size'
+type ModalId =
+  | 'ai'
+  | 'generate'
+  | 'diceset'
+  | 'import'
+  | 'recolor'
+  | 'workspace'
+  | 'export'
+  | 'size'
 
 const RIGHT_RAIL: ReadonlyArray<{ id: ModalId; label: string; icon: ComponentType<IconProps> }> = [
   { id: 'ai', label: 'AI 생성', icon: IconSparkle },
   { id: 'generate', label: '색 변형', icon: IconDice },
+  { id: 'diceset', label: '주사위 세트', icon: IconDice },
   { id: 'import', label: '이미지 가져오기', icon: IconImage },
   { id: 'recolor', label: '색상 교체', icon: IconRecolor },
   { id: 'workspace', label: '디자인 저장소', icon: IconFolder },
@@ -680,6 +690,11 @@ export function App() {
             onGenerate={replaceDoc}
             onGenerateMany={addPages}
           />
+        </Modal>
+      )}
+      {modal === 'diceset' && (
+        <Modal title="주사위 세트" onClose={() => setModal(null)}>
+          <DiceSetPanel onGenerateMany={addPages} />
         </Modal>
       )}
       {modal === 'import' && (

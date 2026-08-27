@@ -969,3 +969,10 @@ label.check input {
 .hint.error {
   color: var(--danger);
 }
+
+/* AI 로 받는 쪽과 손으로 돌리는 쪽을 나눈다. 둘은 같은 것을 다르게 하는 길이다. */
+hr.sep {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 14px 0 10px;
+}

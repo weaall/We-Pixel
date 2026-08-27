@@ -50,7 +50,7 @@ await client.connect(transport)
 try {
   const { tools } = await client.listTools()
   const names = tools.map((t) => t.name).sort()
-  check('도구 등록', names.length === 6, names.join(', '))
+  check('도구 등록', names.length === 7, names.join(', '))
 
   // draw_design — 잘못된 입력이 조용히 통과하지 않아야 한다
   const bad = await client.callTool({
@@ -148,6 +148,29 @@ try {
     arguments: { name: HEART.name, count: 3, hue: 200 },
   })
   check('같은 인자면 같은 결과', imageOf(variants)?.data === imageOf(rerun)?.data)
+
+  // 주사위 세트: 여섯 개가 같은 배색을 쓰고 눈만 달라야 한다
+  const set = await client.callTool({
+    name: 'generate_dice_set',
+    arguments: { name: 'SmokeSet', hue: 200 },
+  })
+  const setText = textOf(set)
+  check(
+    'generate_dice_set 성공',
+    !set.isError && !!imageOf(set) && setText.includes('SmokeSet-6'),
+    setText.split('\n')[0],
+  )
+  check(
+    '여섯 개 모두 저장',
+    [1, 2, 3, 4, 5, 6].every((n) => setText.includes(`SmokeSet-${n}`)),
+  )
+  check('마주보는 면의 합이 7', setText.includes('(1/4/5)') && setText.includes('(6/2/3)'))
+
+  const one = await client.callTool({ name: 'get_design', arguments: { name: 'SmokeSet-1' } })
+  const six = await client.callTool({ name: 'get_design', arguments: { name: 'SmokeSet-6' } })
+  const paletteOfText = (r) => (textOf(r).match(/palette: (\{[^}]*\})/) ?? [])[1]
+  check('세트가 배색을 함께 쓴다', paletteOfText(one) === paletteOfText(six), paletteOfText(one))
+  check('눈은 서로 다르다', textOf(one).split('rows:')[1] !== textOf(six).split('rows:')[1])
 
   const listed = await client.callTool({ name: 'list_designs', arguments: {} })
   const listText = textOf(listed)

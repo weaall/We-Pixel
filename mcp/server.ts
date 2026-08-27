@@ -7,7 +7,8 @@ import type { PixelSpec } from '../src/core/codec'
 import { fromSpec, toSpec, TRANSPARENT_CHAR } from '../src/core/codec'
 import type { PixelDoc } from '../src/core/doc'
 import { MAX_SIZE, MIN_SIZE } from '../src/core/doc'
-import { defaultVariantSetOptions, makeVariants } from '../src/core/generate/variants'
+import { defaultVariantOptions, defaultVariantSetOptions, makeVariants } from '../src/core/generate/variants'
+import { dicePaletteList, diceSetSpecs, diceSetSpecsFrom } from '../src/core/generate/diceSet'
 import { defaultActionSpec } from '../src/export/csharp'
 import { buildPackage } from '../src/export/package'
 import { defaultImportOptions } from '../src/export/unityMeta'
@@ -211,6 +212,77 @@ server.registerTool(
 // ---------------------------------------------------------------------------
 // generate_sprite / generate_pattern — 알고리즘 생성. 시작점이나 배경용.
 // ---------------------------------------------------------------------------
+
+server.registerTool(
+  'generate_dice_set',
+  {
+    title: '주사위 세트 만들기',
+    description: [
+      '윗면이 1~6 인 주사위 여섯 개를 한 벌로 만든다.',
+      '',
+      '형태는 사람이 그린 참고 주사위에서 뜬 것이라 그리지 않는다. 정하는 것은 색뿐이다.',
+      '여섯 개가 배색 하나를 함께 쓰므로 세트로 보인다 — 장마다 색을 따로 정하면',
+      '따로 만든 주사위처럼 보인다.',
+      '',
+      'palette 를 주면 그대로 쓰고, 비우면 hue 로 원본 색조를 옮긴다.',
+      'get_palette 대신 아래 char 목록을 쓰면 된다: ' + dicePaletteList().map((e) => e.char).join(', '),
+    ].join('\n'),
+    inputSchema: {
+      name: nameArg.describe('저장 이름의 접두어. "Fire" 면 Fire-1 ... Fire-6 으로 저장된다.'),
+      hue: z.number().min(0).max(360).default(0).describe('목표 색조. palette 를 주면 무시된다.'),
+      saturation: z.number().min(0).max(2).default(1).describe('채도 배율.'),
+      contrast: z.number().min(0.2).max(2).default(1).describe('명암 폭 배율.'),
+      brightness: z.number().min(-0.3).max(0.3).default(0).describe('밝기 이동.'),
+      palette: z
+        .array(z.object({ char: z.string(), hex: z.string() }))
+        .optional()
+        .describe('직접 정한 배색. char 는 원본 팔레트의 문자, hex 는 "#rrggbb".'),
+    },
+  },
+  async ({ name, hue, saturation, contrast, brightness, palette }) => {
+    try {
+      const set =
+        palette && palette.length > 0
+          ? diceSetSpecsFrom(palette)
+          : diceSetSpecs({
+              ...defaultVariantOptions,
+              hue,
+              saturation,
+              contrast,
+              brightness,
+              // 주사위는 외곽선도 몸통 색을 따라가야 세트로 보인다.
+              keepNeutral: false,
+            })
+
+      const saved: string[] = []
+      // spec 을 그대로 저장한다. toSpec 으로 다시 매기면 장마다 문자가 달라진다.
+      for (const d of set) saved.push(await saveSpec(`${name}-${d.top}`, d.spec))
+
+      const preview = fromSpec(set[5].spec)
+      const scale = previewScale(preview)
+      return {
+        content: [
+          {
+            type: 'text',
+            text: [
+              `주사위 세트 여섯 개를 만들었습니다.`,
+              ...set.map((d, i) => `  윗면 ${d.top} (${d.pips.join('/')}) -> ${saved[i]}`),
+              '보이는 세 면은 위/왼쪽/오른쪽이고 마주보는 면의 합은 7입니다.',
+              `아래 이미지는 윗면 6 을 ${scale}배로 확대한 것입니다.`,
+            ].join('\n'),
+          },
+          {
+            type: 'image',
+            data: toBase64(encodePng(preview, scale)),
+            mimeType: 'image/png',
+          },
+        ],
+      }
+    } catch (err) {
+      return fail(err)
+    }
+  },
+)
 
 server.registerTool(
   'generate_variants',
