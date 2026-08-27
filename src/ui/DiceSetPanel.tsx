@@ -9,7 +9,8 @@ import { buildPackage } from '../export/package'
 import { docToPngBlob, downloadBlob } from '../export/png'
 import { defaultImportOptions } from '../export/unityMeta'
 import type { DiceTop } from '../core/generate/diceSet'
-import { defaultRollOptions, makeRoll, rollSheetItems } from '../core/generate/diceRoll'
+import { defaultRollOptions, makeRoll } from '../core/generate/diceRoll'
+import { defaultSpinOptions, makeSpin } from '../core/generate/diceSpin'
 import { DocThumb } from './DocThumb'
 import { RollPreview } from './RollPreview'
 
@@ -40,6 +41,9 @@ export function DiceSetPanel(props: DiceSetPanelProps) {
   const [frameCount, setFrameCount] = useState(defaultRollOptions.frames)
   const [bounces, setBounces] = useState(defaultRollOptions.bounces)
   const [fps, setFps] = useState(12)
+  /** 눈만 바꿀지, 큐브를 실제로 돌릴지. */
+  const [spin, setSpin] = useState(true)
+  const [turns, setTurns] = useState(defaultSpinOptions.turns)
 
   const [concept, setConcept] = useState('')
   const [busy, setBusy] = useState(false)
@@ -91,17 +95,13 @@ export function DiceSetPanel(props: DiceSetPanelProps) {
    * 정보다 — 여섯 장 모두 실루엣이 같고 눈만 다르다. 눈이 빠르게 바뀌며 튀다가
    * 결과에 멈추는 연출이고, 픽셀 게임에서 실제로 쓰는 방식이다.
    */
-  const roll = useMemo(
-    () =>
-      makeRoll({
-        ...defaultRollOptions,
-        result,
-        frames: frameCount,
-        bounces,
-        palette: diceTonedPalette({ body, pip }),
-      }),
-    [result, frameCount, bounces, body, pip],
-  )
+  const roll = useMemo(() => {
+    const palette = diceTonedPalette({ body, pip })
+    if (spin) {
+      return makeSpin({ ...defaultSpinOptions, result, frames: frameCount, bounces, turns, palette })
+    }
+    return makeRoll({ ...defaultRollOptions, result, frames: frameCount, bounces, palette })
+  }, [spin, result, frameCount, bounces, turns, body, pip])
 
   const applyPreset = (p: { name: string; tone: DiceToneOptions }) => {
     setPreset(p.name)
@@ -228,6 +228,17 @@ export function DiceSetPanel(props: DiceSetPanelProps) {
       <hr className="sep" />
 
       <h3 className="sub">굴리기</h3>
+
+      <div className="row">
+        <div className="grow seg">
+          <button className={spin ? 'active' : ''} onClick={() => setSpin(true)}>
+            실제 회전
+          </button>
+          <button className={spin ? '' : 'active'} onClick={() => setSpin(false)}>
+            눈만 바꾸기
+          </button>
+        </div>
+      </div>
       <RollPreview frames={roll.map((f) => f.doc)} fps={fps} box={72} />
 
       <div className="row">
@@ -262,6 +273,21 @@ export function DiceSetPanel(props: DiceSetPanelProps) {
         />
       </div>
 
+      {spin && (
+        <div className="row">
+          <label>바퀴 {turns.toFixed(1)}</label>
+          <input
+            className="grow"
+            type="range"
+            min={0.5}
+            max={4}
+            step={0.5}
+            value={turns}
+            onChange={(e) => setTurns(Number(e.target.value))}
+          />
+        </div>
+      )}
+
       <div className="row">
         <label>속도 {fps}fps</label>
         <input
@@ -280,7 +306,10 @@ export function DiceSetPanel(props: DiceSetPanelProps) {
           disabled={busy}
           onClick={() =>
             exportPackage(
-              rollSheetItems(roll, `${preset || '주사위'}Roll`),
+              roll.map((f, i) => ({
+                name: `${preset || '주사위'}Roll_${String(i).padStart(2, '0')}`,
+                doc: f.doc,
+              })),
               `${preset || 'Dice'}Roll`,
               Math.min(8, roll.length),
             )
@@ -291,9 +320,9 @@ export function DiceSetPanel(props: DiceSetPanelProps) {
         </button>
       </div>
       <p className="hint">
-        큐브를 실제로 회전시키지는 않습니다. 눈이 빠르게 바뀌며 튀다가 결과에
-        멈추는 연출입니다 — 참고 그림 여섯 장은 실루엣이 모두 같아 회전 정보가
-        들어 있지 않습니다.
+        {spin
+          ? '큐브를 3D로 돌려 그립니다. 칸마다 실루엣이 달라집니다. 마지막 칸은 사람이 그린 원본이라 결과가 또렷합니다.'
+          : '눈이 빠르게 바뀌며 튀다가 결과에 멈추는 연출입니다. 모든 칸이 사람이 그린 원본입니다.'}
       </p>
       {note !== null && <p className="hint">{note}</p>}
       <p className="hint">

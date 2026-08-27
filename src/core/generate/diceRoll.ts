@@ -75,7 +75,7 @@ export function bounceAt(t: number, bounces: number, height: number): number {
 }
 
 /** 그림을 위로 올린 새 문서. 칸 크기는 그대로다. */
-function lifted(doc: PixelDoc, dy: number): PixelDoc {
+export function lift(doc: PixelDoc, dy: number): PixelDoc {
   if (dy === 0) return { w: doc.w, h: doc.h, data: new Uint8ClampedArray(doc.data) }
   const out = createDoc(doc.w, doc.h)
   for (let y = 0; y < doc.h; y++) {
@@ -124,8 +124,8 @@ export function makeRoll(o: RollOptions): RollFrame[] {
   for (let i = 0; i < frames; i++) {
     const top = i < spinning ? order[i] : o.result
     // 마지막 칸의 t 는 1이라 높이가 0이 된다.
-    const lift = bounceAt(i / (frames - 1), o.bounces, height)
-    out.push({ top, lift, doc: lifted(get(top), lift) })
+    const liftPx = bounceAt(i / (frames - 1), o.bounces, height)
+    out.push({ top, lift: liftPx, doc: lift(get(top), liftPx) })
   }
   return out
 }
