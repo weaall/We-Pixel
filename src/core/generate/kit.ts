@@ -1,7 +1,7 @@
 import type { PixelSpec } from '../codec'
 import type { ButtonState, ButtonTone } from './button'
 import { BUTTON_ROLE_LIST, buttonSet, buttonSetFromRoles } from './button'
-import type { DiceTop } from './diceSet'
+import type { DiceSpecItem } from './diceSet'
 import { DICE_ROLE_LIST, diceSetSpecsFromRoles, diceSetSpecsToned } from './diceSet'
 
 /**
@@ -55,7 +55,8 @@ export const defaultKitSizes: KitSizes = {
 }
 
 export interface Kit {
-  dice: Array<{ top: DiceTop; pips: [number, number, number]; spec: PixelSpec }>
+  /** 등축 여섯 장과 정면 여섯 장. */
+  dice: DiceSpecItem[]
   button: Array<{ state: ButtonState; spec: PixelSpec }>
   panel: PixelSpec
 }

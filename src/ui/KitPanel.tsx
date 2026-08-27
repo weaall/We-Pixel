@@ -36,7 +36,11 @@ interface Piece {
 
 function pieces(kit: Kit, label: string): Piece[] {
   return [
-    ...kit.dice.map((d) => ({ name: `${label} 주사위 ${d.top}`, doc: fromSpec(d.spec), family: 'dice' as const })),
+    ...kit.dice.map((d) => ({
+      name: `${label} 주사위 ${d.kind === 'iso' ? '' : '정면 '}${d.top}`,
+      doc: fromSpec(d.spec),
+      family: 'dice' as const,
+    })),
     ...kit.button.map((b) => ({
       name: `${label} 버튼 ${STATE_LABEL[b.state] ?? b.state}`,
       doc: fromSpec(b.spec),
@@ -130,7 +134,7 @@ export function KitPanel(props: KitPanelProps) {
         doc: dice[0].doc,
         // 주사위는 정사각이라 따로 묶는다. 크기가 다른 것을 한 텍스처에 섞으면
         // 9-슬라이스 테두리가 엉뚱한 자리를 가리킨다.
-        sheet: dice.map((p, i) => ({ name: `Dice_${i + 1}`, doc: p.doc })),
+        sheet: dice.map((p, i) => ({ name: `Dice_${i < 6 ? '' : 'F'}${(i % 6) + 1}`, doc: p.doc })),
         assetName: `${label}Dice`,
         extraSheets: [
           {

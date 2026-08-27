@@ -126,16 +126,17 @@ export function DiceSetPanel(props: DiceSetPanelProps) {
 
       <div className="variant-strip">
         {set.map((d) => (
-          <figure key={d.top}>
+          <figure key={`${d.kind}${d.top}`}>
             <DocThumb doc={d.doc} box={56} />
-            <figcaption>{d.pips.join('·')}</figcaption>
+            <figcaption>{d.kind === 'iso' ? d.pips.join('·') : `정면 ${d.top}`}</figcaption>
           </figure>
         ))}
       </div>
 
       <p className="hint">
-        윗면이 1~6인 여섯 개가 한 벌입니다. 아래 숫자는 보이는 세 면(위·왼쪽·오른쪽)이고,
-        마주보는 면의 합은 7입니다.
+        한 벌은 열두 장입니다 — 등축 여섯과 정면 여섯. 등축 아래 숫자는 보이는 세
+        면(위·왼쪽·오른쪽)이고, 마주보는 면의 합은 7입니다. 열두 장이 배색 하나를
+        문자까지 함께 씁니다.
       </p>
 
       <div className="row">
@@ -182,15 +183,19 @@ export function DiceSetPanel(props: DiceSetPanelProps) {
 
       <div className="row" style={{ marginTop: 10 }}>
         <button className="grow" onClick={() => push(set.map((d) => d.doc), preset || '주사위')}>
-          이 색으로 6장
+          이 색으로 {set.length}장
         </button>
         <button
           className="grow"
           disabled={busy}
           onClick={() =>
             exportPackage(
-              set.map((d) => ({ name: `${preset || '주사위'}_${d.top}`, doc: d.doc })),
+              set.map((d) => ({
+                name: `${preset || '주사위'}_${d.kind === 'iso' ? '' : 'F'}${d.top}`,
+                doc: d.doc,
+              })),
               `${preset || 'Dice'}Set`,
+              6,
             )
           }
           data-tip="여섯 장을 한 텍스처로 묶고 .meta 에 칸 정보를 넣습니다"

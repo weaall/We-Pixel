@@ -3,14 +3,32 @@ import type { PixelSpec } from '../codec'
 import { fromSpec, unpackRows } from '../codec'
 import type { PixelDoc } from '../doc'
 import type { DiceRole } from './diceFrames'
-import { DICE_FRAMES, DICE_FRAME_SIZE, DICE_PALETTE, DICE_ROLE_OF } from './diceFrames'
+import {
+  DICE_FRAMES,
+  DICE_FRAME_SIZE,
+  DICE_PALETTE,
+  DICE_ROLE_OF,
+  FACE_FRAMES,
+} from './diceFrames'
 import type { PaletteEntry, VariantOptions } from './variants'
 import { variantMappings } from './variants'
 
 export const DICE_TOPS = [1, 2, 3, 4, 5, 6] as const
 export type DiceTop = (typeof DICE_TOPS)[number]
 
+/**
+ * 어느 가족인지.
+ *
+ * iso 는 세 면이 보이는 등축, face 는 한 면만 보이는 정면이다. 한 번에 열두
+ * 장이 나오고 팔레트를 함께 쓴다.
+ */
+export type DiceKind = 'iso' | 'face'
+export const DICE_KINDS: ReadonlyArray<DiceKind> = ['iso', 'face']
+
+const framesOf = (kind: DiceKind) => (kind === 'iso' ? DICE_FRAMES : FACE_FRAMES)
+
 export interface Dice {
+  kind: DiceKind
   /** 윗면 눈. 1~6. */
   top: DiceTop
   /** 보이는 세 면: 위, 왼쪽, 오른쪽. */
@@ -19,9 +37,13 @@ export interface Dice {
 }
 
 /** 프레임을 spec 으로. 팔레트를 갈아끼울 때는 palette 만 바꿔 넣는다. */
-export function diceSpec(top: DiceTop, palette: Record<string, string> = DICE_PALETTE): PixelSpec {
-  const frame = DICE_FRAMES[top]
-  if (!frame) throw new Error(`${top} 번 주사위 프레임이 없습니다`)
+export function diceSpec(
+  top: DiceTop,
+  palette: Record<string, string> = DICE_PALETTE,
+  kind: DiceKind = 'iso',
+): PixelSpec {
+  const frame = framesOf(kind)[top]
+  if (!frame) throw new Error(`${kind} ${top} 번 프레임이 없습니다`)
   return {
     w: DICE_FRAME_SIZE.w,
     h: DICE_FRAME_SIZE.h,
@@ -30,8 +52,30 @@ export function diceSpec(top: DiceTop, palette: Record<string, string> = DICE_PA
   }
 }
 
-export function diceDoc(top: DiceTop, palette?: Record<string, string>): PixelDoc {
-  return fromSpec(diceSpec(top, palette))
+export function diceDoc(
+  top: DiceTop,
+  palette?: Record<string, string>,
+  kind: DiceKind = 'iso',
+): PixelDoc {
+  return fromSpec(diceSpec(top, palette, kind))
+}
+
+/** 열두 장을 한 팔레트로. 등축 여섯 장 뒤에 정면 여섯 장이 온다. */
+function twelve(palette: Record<string, string>): DiceSpecItem[] {
+  const out: DiceSpecItem[] = []
+  for (const kind of DICE_KINDS) {
+    for (const top of DICE_TOPS) {
+      out.push({ kind, top, pips: framesOf(kind)[top].pips, spec: diceSpec(top, palette, kind) })
+    }
+  }
+  return out
+}
+
+export interface DiceSpecItem {
+  kind: DiceKind
+  top: DiceTop
+  pips: [number, number, number]
+  spec: PixelSpec
 }
 
 /**
@@ -42,9 +86,11 @@ export function diceDoc(top: DiceTop, palette?: Record<string, string>): PixelDo
  */
 export function dicePalette(): PaletteEntry[] {
   const counts = new Map<string, number>()
-  for (const top of DICE_TOPS) {
-    for (const row of unpackRows(DICE_FRAMES[top].rows, DICE_FRAME_SIZE.w)) {
-      for (const ch of row) counts.set(ch, (counts.get(ch) ?? 0) + 1)
+  for (const kind of DICE_KINDS) {
+    for (const top of DICE_TOPS) {
+      for (const row of unpackRows(framesOf(kind)[top].rows, DICE_FRAME_SIZE.w)) {
+        for (const ch of row) counts.set(ch, (counts.get(ch) ?? 0) + 1)
+      }
     }
   }
 
@@ -87,21 +133,12 @@ export function diceSetPalette(o: VariantOptions): Record<string, string> {
 }
 
 /** 세트 하나를 spec 으로. 여섯 장이 같은 문자와 같은 팔레트를 쓴다. */
-export function diceSetSpecs(o: VariantOptions): Array<{
-  top: DiceTop
-  pips: [number, number, number]
-  spec: PixelSpec
-}> {
-  const palette = diceSetPalette(o)
-  return DICE_TOPS.map((top) => ({
-    top,
-    pips: DICE_FRAMES[top].pips,
-    spec: diceSpec(top, palette),
-  }))
+export function diceSetSpecs(o: VariantOptions): DiceSpecItem[] {
+  return twelve(diceSetPalette(o))
 }
 
 export function makeDiceSet(o: VariantOptions): Dice[] {
-  return diceSetSpecs(o).map(({ top, pips, spec }) => ({ top, pips, doc: fromSpec(spec) }))
+  return diceSetSpecs(o).map((it) => ({ ...it, doc: fromSpec(it.spec) }))
 }
 
 /**
@@ -126,17 +163,12 @@ export function diceSetPaletteFrom(
 
 export function diceSetSpecsFrom(
   entries: ReadonlyArray<{ char?: string; hex?: string }>,
-): Array<{ top: DiceTop; pips: [number, number, number]; spec: PixelSpec }> {
-  const palette = diceSetPaletteFrom(entries)
-  return DICE_TOPS.map((top) => ({
-    top,
-    pips: DICE_FRAMES[top].pips,
-    spec: diceSpec(top, palette),
-  }))
+): DiceSpecItem[] {
+  return twelve(diceSetPaletteFrom(entries))
 }
 
 export function diceSetFromPalette(entries: ReadonlyArray<{ char?: string; hex?: string }>): Dice[] {
-  return diceSetSpecsFrom(entries).map(({ top, pips, spec }) => ({ top, pips, doc: fromSpec(spec) }))
+  return diceSetSpecsFrom(entries).map((it) => ({ ...it, doc: fromSpec(it.spec) }))
 }
 
 /** 모델에게 보여 줄 목록. 많이 쓰인 색부터. */
@@ -232,21 +264,12 @@ export function diceTonedPalette(o: DiceToneOptions): Record<string, string> {
 }
 
 /** 톤으로 세트를 만든다. 여섯 장이 같은 팔레트를 쓴다. */
-export function diceSetSpecsToned(o: DiceToneOptions): Array<{
-  top: DiceTop
-  pips: [number, number, number]
-  spec: PixelSpec
-}> {
-  const palette = diceTonedPalette(o)
-  return DICE_TOPS.map((top) => ({
-    top,
-    pips: DICE_FRAMES[top].pips,
-    spec: diceSpec(top, palette),
-  }))
+export function diceSetSpecsToned(o: DiceToneOptions): DiceSpecItem[] {
+  return twelve(diceTonedPalette(o))
 }
 
 export function makeDiceSetToned(o: DiceToneOptions): Dice[] {
-  return diceSetSpecsToned(o).map(({ top, pips, spec }) => ({ top, pips, doc: fromSpec(spec) }))
+  return diceSetSpecsToned(o).map((it) => ({ ...it, doc: fromSpec(it.spec) }))
 }
 
 /**
@@ -332,11 +355,6 @@ export function diceSetPaletteFromRoles(
 
 export function diceSetSpecsFromRoles(
   entries: ReadonlyArray<{ char?: string; hex?: string }>,
-): Array<{ top: DiceTop; pips: [number, number, number]; spec: PixelSpec }> {
-  const palette = diceSetPaletteFromRoles(entries)
-  return DICE_TOPS.map((top) => ({
-    top,
-    pips: DICE_FRAMES[top].pips,
-    spec: diceSpec(top, palette),
-  }))
+): DiceSpecItem[] {
+  return twelve(diceSetPaletteFromRoles(entries))
 }

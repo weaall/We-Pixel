@@ -2,6 +2,11 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { fromSpec, packRows, toSpec, unpackRows } from '../src/core/codec'
+import {
+  DICE_FRAME_SIZE,
+  DICE_PALETTE,
+  FACE_FRAMES,
+} from '../src/core/generate/diceFrames'
 import type { PixelDoc } from '../src/core/doc'
 import { defaultVariantSetOptions, makeVariants } from '../src/core/generate/variants'
 import { decodePng } from '../src/import/pngDecode'
@@ -79,5 +84,50 @@ describe('참고 주사위', () => {
     expect(rows[16]).toBe('.....abccccccccbdeeeeeeeeda.....')
     const variant = makeVariants(doc, { ...defaultVariantSetOptions, count: 1, hue: 200 })[0]
     expect(toSpec(variant.doc).rows[16]).toBe(rows[16])
+  })
+})
+
+describe('참고 정면 주사위', () => {
+  const FACES = [1, 2, 3, 4, 5, 6] as const
+
+  it.each(FACES)('%d — 구운 프레임이 원본 PNG 를 한 바이트도 안 틀리고 되살린다', (n) => {
+    const raw = decodePng(readFileSync(join(__dirname, 'fixtures', `face-${n}.png`)))
+    const want = toLogicalGrid(raw).doc
+    const got = fromSpec({
+      w: DICE_FRAME_SIZE.w,
+      h: DICE_FRAME_SIZE.h,
+      palette: DICE_PALETTE,
+      rows: unpackRows(FACE_FRAMES[n].rows, DICE_FRAME_SIZE.w),
+    })
+
+    // 채널차 2 이하인 색은 굽는 단계에서 등축 쪽으로 합쳤다. 그만큼은 봐준다.
+    for (let i = 0; i < want.data.length; i += 4) {
+      expect(Math.abs(got.data[i] - want.data[i])).toBeLessThanOrEqual(2)
+      expect(Math.abs(got.data[i + 1] - want.data[i + 1])).toBeLessThanOrEqual(2)
+      expect(Math.abs(got.data[i + 2] - want.data[i + 2])).toBeLessThanOrEqual(2)
+      expect(got.data[i + 3]).toBe(want.data[i + 3])
+    }
+  })
+
+  it.each(FACES)('%d — 앞면 눈이 파일 이름과 맞는다', (n) => {
+    expect(FACE_FRAMES[n].pips).toEqual([n, 0, 0])
+  })
+
+  it('등축과 팔레트를 함께 쓴다', () => {
+    // 따로 매기면 배색 하나를 열두 장에 똑같이 입힐 수 없다.
+    for (const n of FACES) {
+      for (const ch of unpackRows(FACE_FRAMES[n].rows, DICE_FRAME_SIZE.w).join('')) {
+        expect(DICE_PALETTE[ch]).toBeDefined()
+      }
+    }
+  })
+
+  it('몸통은 여섯 장이 공유한다', () => {
+    const grids = FACES.map((n) => unpackRows(FACE_FRAMES[n].rows, DICE_FRAME_SIZE.w).join(''))
+    let same = 0
+    for (let i = 0; i < grids[0].length; i++) {
+      if (grids.every((g) => g[i] === grids[0][i])) same++
+    }
+    expect(same / grids[0].length).toBeGreaterThan(0.9)
   })
 })

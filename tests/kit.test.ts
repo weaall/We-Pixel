@@ -18,9 +18,9 @@ describe('KIT_ROLE_LIST', () => {
 })
 
 describe('kitFromTone', () => {
-  it('주사위 여섯, 버튼 넷, 패널 하나가 나온다', () => {
+  it('주사위 열둘, 버튼 넷, 패널 하나가 나온다', () => {
     const kit = kitFromTone(BUTTON_PRESETS[0].tone)
-    expect(kit.dice).toHaveLength(6)
+    expect(kit.dice).toHaveLength(12)
     expect(kit.button.map((b) => b.state)).toEqual([...BUTTON_STATES])
     expect(kit.panel.w).toBe(defaultKitSizes.panel.w)
   })
@@ -70,7 +70,7 @@ describe('kitFromRoles', () => {
 
   it('한쪽만 와도 나머지는 원래 색으로 남는다', () => {
     const kit = kitFromRoles([{ char: 'ui.face', hex: '#ff0088' }])
-    expect(kit.dice).toHaveLength(6)
+    expect(kit.dice).toHaveLength(12)
     expect(kit.button).toHaveLength(4)
   })
 })

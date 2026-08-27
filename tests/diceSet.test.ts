@@ -36,13 +36,16 @@ function shapeOf(doc: PixelDoc): string {
 }
 
 describe('makeDiceSet', () => {
-  it('여섯 개가 나오고 윗면이 1~6 이다', () => {
+  it('열두 개가 나온다 — 등축 여섯, 정면 여섯', () => {
     const set = makeDiceSet({ ...defaultVariantOptions, hue: 200 })
-    expect(set.map((d) => d.top)).toEqual([1, 2, 3, 4, 5, 6])
+    expect(set).toHaveLength(12)
+    expect(set.filter((d) => d.kind === 'iso').map((d) => d.top)).toEqual([1, 2, 3, 4, 5, 6])
+    expect(set.filter((d) => d.kind === 'face').map((d) => d.top)).toEqual([1, 2, 3, 4, 5, 6])
+    // 앞면 눈은 파일 이름과 맞아야 한다.
     for (const d of set) expect(d.pips[0]).toBe(d.top)
   })
 
-  it('여섯 개가 같은 색 패턴을 쓴다', () => {
+  it('열두 개가 같은 색 패턴을 쓴다', () => {
     // 세트의 요건이다. 장마다 매핑을 다시 만들면 같은 회색이 장마다 다른 색이
     // 되어 따로 만든 주사위처럼 보인다.
     const set = makeDiceSet({ ...defaultVariantOptions, hue: 200 })
@@ -50,8 +53,12 @@ describe('makeDiceSet', () => {
       new Set(paletteOf(doc).map((e) => e.color.join(',')))
 
     // 1번은 눈이 하나라 붉은 계열이 적을 수 있다. 6번의 색은 1번의 색을 포함해야 한다.
-    const six = bodyColors(set[5].doc)
-    for (const d of set) for (const c of bodyColors(d.doc)) expect(six.has(c)).toBe(true)
+    // 눈이 여섯인 장이 색을 가장 많이 쓴다. 나머지는 그 부분집합이어야 한다.
+    const widest = new Set([
+      ...bodyColors(set[5].doc),
+      ...bodyColors(set[11].doc),
+    ])
+    for (const d of set) for (const c of bodyColors(d.doc)) expect(widest.has(c)).toBe(true)
   })
 
   it('눈 배치를 건드리지 않는다', () => {
@@ -149,8 +156,10 @@ describe('isRealDice', () => {
     expect(isRealDice([1, 2])).toBe(false)
   })
 
-  it('구운 프레임이 전부 통과한다', () => {
+  it('구운 등축 프레임이 전부 통과한다', () => {
+    // 정면은 한 면만 보이므로 뒤 둘이 0 이다. 규칙을 물을 대상이 아니다.
     for (const d of makeDiceSet({ ...defaultVariantOptions, hue: 0 })) {
+      if (d.kind !== 'iso') continue
       expect(isRealDice(d.pips)).toBe(true)
     }
   })
@@ -168,7 +177,7 @@ describe('세트가 문자까지 공유한다', () => {
   it('눈은 서로 다르다', () => {
     const specs = diceSetSpecs({ ...defaultVariantOptions, hue: 200 })
     const rows = specs.map((s) => s.spec.rows.join(''))
-    expect(new Set(rows).size).toBe(6)
+    expect(new Set(rows).size).toBe(12)
   })
 
   it('모델이 준 배색도 문자를 유지한다', () => {
@@ -260,8 +269,52 @@ describe('역할 이름으로 받기', () => {
     expect(specs[0].spec.palette[char]).toBe(DICE_PALETTE[char])
   })
 
-  it('여덟 자리가 모두 있다', () => {
-    expect(DICE_ROLE_LIST).toHaveLength(8)
-    expect(new Set(DICE_ROLE_LIST.map((e) => e.role)).size).toBe(8)
+  it('아홉 자리가 모두 있다', () => {
+    expect(DICE_ROLE_LIST).toHaveLength(9)
+    expect(new Set(DICE_ROLE_LIST.map((e) => e.role)).size).toBe(9)
+  })
+})
+
+describe('정면 가족', () => {
+  it('등축과 정면이 팔레트를 함께 쓴다', () => {
+    // 따로 매기면 배색 하나를 열두 장에 똑같이 입힐 수 없다.
+    const specs = diceSetSpecsToned({
+      body: { ...defaultDiceTone, hue: 30, saturationBoost: 0.4 },
+      pip: defaultDiceTone,
+    })
+    const first = JSON.stringify(specs[0].spec.palette)
+    for (const s of specs) expect(JSON.stringify(s.spec.palette)).toBe(first)
+  })
+
+  it('정면은 앞면 하나만 센다', () => {
+    for (const d of makeDiceSet({ ...defaultVariantOptions, hue: 0 })) {
+      if (d.kind !== 'face') continue
+      expect(d.pips).toEqual([d.top, 0, 0])
+    }
+  })
+
+  it('정면과 등축은 서로 다른 그림이다', () => {
+    const set = makeDiceSet({ ...defaultVariantOptions, hue: 0 })
+    const iso = set.filter((d) => d.kind === 'iso')
+    const face = set.filter((d) => d.kind === 'face')
+    for (let i = 0; i < 6; i++) {
+      expect(Array.from(face[i].doc.data)).not.toEqual(Array.from(iso[i].doc.data))
+    }
+  })
+
+  it('열두 장 모두 크기가 같다', () => {
+    // 섞이면 시트 슬라이스가 어긋난다.
+    for (const d of makeDiceSet({ ...defaultVariantOptions, hue: 0 })) {
+      expect(d.doc.w).toBe(64)
+      expect(d.doc.h).toBe(64)
+    }
+  })
+
+  it('배색을 바꾸면 열두 장이 다 따라온다', () => {
+    const a = makeDiceSet({ ...defaultVariantOptions, hue: 20, saturationBoost: 0.4 })
+    const b = makeDiceSet({ ...defaultVariantOptions, hue: 200, saturationBoost: 0.4 })
+    for (let i = 0; i < 12; i++) {
+      expect(Array.from(a[i].doc.data)).not.toEqual(Array.from(b[i].doc.data))
+    }
   })
 })

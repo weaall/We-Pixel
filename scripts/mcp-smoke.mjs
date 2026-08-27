@@ -165,8 +165,9 @@ try {
     [1, 2, 3, 4, 5, 6].every((n) => setText.includes(`SmokeSet-${n}`)),
   )
   check('마주보는 면의 합이 7', setText.includes('(1/4/5)') && setText.includes('(6/2/3)'))
+  check('열두 장', setText.includes('12장') && setText.includes('SmokeSet-F6'))
   // 여섯 장이 한 텍스처로 묶여야 유니티에서 인덱스만 바꿔 면을 고를 수 있다.
-  check('시트로 묶는다', setText.includes('384x64') && setText.includes('.zip'), (setText.match(/시트: .*/) ?? [''])[0])
+  check('시트로 묶는다', setText.includes('384x128') && setText.includes('.zip'), (setText.match(/시트: .*/) ?? [''])[0])
 
   const one = await client.callTool({ name: 'get_design', arguments: { name: 'SmokeSet-1' } })
   const six = await client.callTool({ name: 'get_design', arguments: { name: 'SmokeSet-6' } })

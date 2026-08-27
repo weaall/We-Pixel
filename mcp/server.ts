@@ -406,14 +406,18 @@ server.registerTool(
 
       const saved: string[] = []
       // spec 을 그대로 저장한다. toSpec 으로 다시 매기면 장마다 문자가 달라진다.
-      for (const d of set) saved.push(await saveSpec(`${name}-${d.top}`, d.spec))
+      // 등축과 정면이 같은 눈 수를 가지므로 이름이 겹친다. 가족을 붙여 가른다.
+      const idOf = (d: (typeof set)[number]) => `${d.kind === 'iso' ? '' : 'F'}${d.top}`
+      for (const d of set) saved.push(await saveSpec(`${name}-${idOf(d)}`, d.spec))
 
       const preview = fromSpec(set[5].spec)
       let sheetNote: string | null = null
       if (sheet) {
         const pkg = await buildPackage({
           doc: preview,
-          sheet: set.map((d) => ({ name: `${name}_${d.top}`, doc: fromSpec(d.spec) })),
+          sheet: set.map((d) => ({ name: `${name}_${idOf(d)}`, doc: fromSpec(d.spec) })),
+          // 윗줄이 등축, 아랫줄이 정면. 한 줄로 늘어놓으면 768x64 로 길쭉해진다.
+          sheetColumns: 6,
           assetName: `${name}Dice`,
           action: defaultActionSpec,
           unity: defaultImportOptions,
@@ -432,9 +436,12 @@ server.registerTool(
           {
             type: 'text',
             text: [
-              `주사위 세트 여섯 개를 만들었습니다.`,
-              ...set.map((d, i) => `  윗면 ${d.top} (${d.pips.join('/')}) -> ${saved[i]}`),
-              '보이는 세 면은 위/왼쪽/오른쪽이고 마주보는 면의 합은 7입니다.',
+              `주사위 세트 ${set.length}장을 만들었습니다 — 등축 여섯, 정면 여섯.`,
+              ...set.map(
+                (d, i) =>
+                  `  ${d.kind === 'iso' ? '등축' : '정면'} ${d.top} (${d.pips.join('/')}) -> ${saved[i]}`,
+              ),
+              '등축의 세 면은 위/왼쪽/오른쪽이고 마주보는 면의 합은 7입니다. 정면은 앞면 하나뿐입니다.',
               ...(sheetNote ? [sheetNote] : []),
               `아래 이미지는 윗면 6 을 ${scale}배로 확대한 것입니다.`,
             ].join('\n'),
