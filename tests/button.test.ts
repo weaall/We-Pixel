@@ -12,6 +12,7 @@ import {
   MIN_BUTTON_W,
   buttonPalette,
   buttonSet,
+  buttonSetFromRoles,
   buttonSpec,
   defaultButtonTone,
   statePalette,
@@ -183,5 +184,51 @@ describe('역할', () => {
       if (ch === '.') continue
       expect(BUTTON_ROLE_OF[ch]).toBeDefined()
     }
+  })
+})
+
+describe('역할 이름으로 받기', () => {
+  it('이름으로 색을 입힌다', () => {
+    const set = buttonSetFromRoles(64, 32, [{ char: 'face', hex: '#00ff88' }])
+    expect(set[0].spec.palette[roleChar('face')]).toBe('#00ff88')
+  })
+
+  it('없는 이름과 잘못된 hex 는 무시한다', () => {
+    const set = buttonSetFromRoles(64, 32, [
+      { char: 'nope', hex: '#00ff88' },
+      { char: 'face', hex: 'green' },
+    ])
+    expect(set[0].spec.palette[roleChar('face')]).toBe(BUTTON_PALETTE[roleChar('face')])
+  })
+
+  it('빠뜨린 자리는 원래 색으로 남는다', () => {
+    // 검정으로 만들면 버튼에 구멍이 뚫린 것처럼 보인다.
+    const set = buttonSetFromRoles(64, 32, [])
+    expect(set[0].spec.palette).toEqual(statePalette(BUTTON_PALETTE, 'normal'))
+  })
+
+  it('네 상태가 모두 나온다', () => {
+    const set = buttonSetFromRoles(64, 32, [{ char: 'face', hex: '#00ff88' }])
+    expect(set.map((s) => s.state)).toEqual([...BUTTON_STATES])
+    // 눌림은 경사가 뒤집혀 있어야 한다.
+    const normal = set[0].spec.palette
+    const pressed = set[2].spec.palette
+    expect(pressed[roleChar('bevelLit')]).toBe(normal[roleChar('bevelShade')])
+  })
+})
+
+describe('세로로도 늘어난다', () => {
+  it('패널 크기가 나온다', () => {
+    // 같은 한 장이 버튼도 되고 패널도 된다.
+    const s = buttonSpec({ w: 160, h: 96, state: 'normal' })
+    expect(s.w).toBe(160)
+    expect(s.h).toBe(96)
+  })
+
+  it('위아래 가장자리가 크기와 무관하게 같다', () => {
+    const small = buttonSpec({ w: 64, h: 32, state: 'normal' })
+    const tall = buttonSpec({ w: 64, h: 160, state: 'normal' })
+    expect(tall.rows.slice(0, BUTTON_BORDER.top)).toEqual(small.rows.slice(0, BUTTON_BORDER.top))
+    expect(tall.rows.slice(-BUTTON_BORDER.bottom)).toEqual(small.rows.slice(-BUTTON_BORDER.bottom))
   })
 })

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import type { PixelSpec } from '../core/codec'
 import { fromSpec } from '../core/codec'
 import type { PixelDoc } from '../core/doc'
 import type { ButtonTone } from '../core/generate/button'
@@ -24,6 +25,19 @@ export interface ButtonPanelProps {
   ) => void
 }
 
+/**
+ * 자주 쓰는 크기.
+ *
+ * 세로로도 늘어나므로 같은 한 장이 버튼도 되고 패널도 된다. 창틀은 세로가 길다.
+ */
+const SIZES: ReadonlyArray<{ name: string; w: number; h: number }> = [
+  { name: '버튼', w: 64, h: 32 },
+  { name: '넓은 버튼', w: 128, h: 32 },
+  { name: '작은 칸', w: 32, h: 32 },
+  { name: '패널', w: 160, h: 96 },
+  { name: '창틀', w: 128, h: 160 },
+]
+
 const STATE_LABEL: Record<string, string> = {
   normal: '기본',
   hover: '올림',
@@ -43,6 +57,7 @@ export function ButtonPanel(props: ButtonPanelProps) {
   const [preset, setPreset] = useState(BUTTON_PRESETS[0].name)
   const [tone, setTone] = useState<ButtonTone>(BUTTON_PRESETS[0].tone)
 
+  const [concept, setConcept] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
@@ -53,6 +68,42 @@ export function ButtonPanel(props: ButtonPanelProps) {
   const patch = (next: Partial<ButtonTone>) => {
     setTone((t) => ({ ...t, ...next }))
     setPreset('')
+  }
+
+  /**
+   * 컨셉 하나로 배색을 받는다.
+   *
+   * 모델에게는 형태를 돌려줄 방법 자체가 없다 — 응답 스키마에 rows 가 없다.
+   * 자리 이름만 알려주고 색만 받는다.
+   */
+  const runAi = async () => {
+    setBusy(true)
+    setError(null)
+    setNote(null)
+    try {
+      const res = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'buttonset', prompt: concept.trim(), w, h }),
+      })
+      const body = await res.json()
+      if (!res.ok) throw new Error(body?.error ?? `요청 실패 (${res.status})`)
+      const states = (body.states ?? []) as Array<{ state: string; spec: PixelSpec }>
+      if (states.length === 0) throw new Error('돌려받은 배색이 없습니다.')
+      const label = (body.name as string) || concept.trim()
+      props.onGenerateMany(
+        states.map((it) => fromSpec(it.spec)),
+        label,
+        states.map((it) => `${label} ${STATE_LABEL[it.state] ?? it.state}`),
+      )
+      if (Array.isArray(body.warnings) && body.warnings.length > 0) {
+        setNote(body.warnings.join(' '))
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
   }
 
   const exportSheet = async () => {
@@ -110,12 +161,29 @@ export function ButtonPanel(props: ButtonPanelProps) {
       </p>
 
       <div className="row">
+        <div className="grow seg wrap">
+          {SIZES.map((p) => (
+            <button
+              key={p.name}
+              className={w === p.w && h === p.h ? 'active' : ''}
+              onClick={() => {
+                setW(p.w)
+                setH(p.h)
+              }}
+            >
+              {p.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="row">
         <label>가로 {w}</label>
         <input
           className="grow"
           type="range"
           min={MIN_BUTTON_W}
-          max={192}
+          max={256}
           value={w}
           onChange={(e) => setW(Number(e.target.value))}
         />
@@ -127,7 +195,7 @@ export function ButtonPanel(props: ButtonPanelProps) {
           className="grow"
           type="range"
           min={MIN_BUTTON_H}
-          max={96}
+          max={192}
           value={h}
           onChange={(e) => setH(Number(e.target.value))}
         />
@@ -181,6 +249,28 @@ export function ButtonPanel(props: ButtonPanelProps) {
           onChange={(e) => patch({ brightness: Number(e.target.value) })}
           data-tip={`밝기 ${tone.brightness > 0 ? '+' : ''}${tone.brightness.toFixed(2)}`}
         />
+      </div>
+
+      <div className="row" style={{ marginTop: 10 }}>
+        <input
+          className="grow"
+          type="text"
+          value={concept}
+          placeholder="나무, 돌, 황금, 유리..."
+          onChange={(e) => setConcept(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !busy && concept.trim() !== '') runAi()
+            e.stopPropagation()
+          }}
+        />
+        <button
+          className="primary"
+          disabled={busy || concept.trim() === ''}
+          onClick={runAi}
+          data-tip="컨셉에 맞는 배색을 AI가 정합니다. 형태는 그대로입니다"
+        >
+          {busy ? '받는 중...' : '컨셉으로'}
+        </button>
       </div>
 
       <div className="row" style={{ marginTop: 10 }}>

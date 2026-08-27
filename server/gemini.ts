@@ -5,6 +5,8 @@ import { quantize } from '../src/core/quantize'
 import { packRows, usedColors } from '../src/core/codec'
 import { DICE_FRAMES, DICE_FRAME_SIZE } from '../src/core/generate/diceFrames'
 import { DICE_ROLE_LIST, diceSetSpecsFromRoles } from '../src/core/generate/diceSet'
+import { BUTTON_ROLE_LIST, buttonSetFromRoles, BUTTON_STATES } from '../src/core/generate/button'
+import { BUTTON_ROWS, BUTTON_SIZE } from '../src/core/generate/buttonFrame'
 import { parseHex } from '../src/core/color'
 import type { RGBA } from '../src/core/color'
 import { replaceColors } from '../src/core/recolor'
@@ -127,6 +129,27 @@ export interface RawResult {
   rows?: string[]
 }
 
+const BUTTONSET_INSTRUCTION = [
+  '당신은 픽셀 아트 UI 버튼의 배색을 정하는 사람입니다.',
+  '',
+  '형태는 이미 정해져 있고 바꿀 수 없습니다. 당신이 정하는 것은 색뿐입니다.',
+  '',
+  '각 자리가 무엇인지:',
+  '  halo        바깥 테두리. 버튼을 배경에서 떼어 놓는 한 겹입니다.',
+  '  outline     외곽선. 가장 어둡습니다.',
+  '  bevelLit    왼쪽 위 경사. 빛을 받는 쪽이라 본체보다 밝습니다.',
+  '  face        본체. 가장 넓습니다.',
+  '  bevelShade  오른쪽 아래 경사. 그늘이라 본체보다 어둡습니다.',
+  '',
+  '규칙:',
+  '- 그림을 그리지 마세요. 색 목록만 돌려줍니다.',
+  '- 다섯 자리를 하나도 빠짐없이 돌려주세요. 없는 이름을 만들지 마세요.',
+  '- 밝기 순서를 지키세요: halo > bevelLit > face > bevelShade > outline.',
+  '  이것이 깨지면 버튼이 눌린 것처럼, 또는 납작한 사각형으로 보입니다.',
+  '- 버튼 위에 글자가 올라갑니다. face 는 글자가 읽힐 만큼 고른 색이어야 합니다.',
+  '- hex 는 "#rrggbb" 형식입니다.',
+].join('\n')
+
 const DICESET_INSTRUCTION = [
   '당신은 주사위 세트의 배색을 정하는 사람입니다.',
   '',
@@ -169,6 +192,13 @@ export interface DiceSetResponse {
   /** 컨셉 이름. 페이지 이름에 쓴다. */
   name: string
   dice: DiceSetItem[]
+  warnings: string[]
+  model: string
+}
+
+export interface ButtonSetResponse {
+  name: string
+  states: Array<{ state: string; spec: PixelSpec }>
   warnings: string[]
   model: string
 }
@@ -417,7 +447,14 @@ function describeBase(base: PixelSpec): string {
   ].join('\n')
 }
 
-export type GenerateMode = 'create' | 'edit' | 'add' | 'recolor' | 'virtual' | 'diceset'
+export type GenerateMode =
+  | 'create'
+  | 'edit'
+  | 'add'
+  | 'recolor'
+  | 'virtual'
+  | 'diceset'
+  | 'buttonset'
 
 /** 팔레트만 받아온다. 그리드를 요청하지 않으므로 모양이 바뀔 수 없다. */
 async function callGeminiPalette(
@@ -471,35 +508,36 @@ async function callGeminiPaletteSet(
   return out.variants
 }
 
-async function callGeminiDiceSet(
+/**
+ * 자리 이름으로 배색 한 벌을 받는다.
+ *
+ * 주사위든 버튼이든 하는 일은 같다 — 형태는 잠근 채 각 자리에 무슨 색을 쓸지만
+ * 정한다. 모델에게 a, b, c 를 주면 무엇을 칠하는지 모른 채 고르지만 자리 이름을
+ * 주면 알고 고른다.
+ */
+async function callGeminiRoles(
   config: ServerConfig,
   prompt: string,
+  instruction: string,
+  roles: ReadonlyArray<{ role: string; hex: string }>,
+  shape: { w: number; h: number; rows: string[]; note: string },
 ): Promise<PaletteSetResult['variants'][number]> {
-  const list = DICE_ROLE_LIST.map((e) => `  ${e.role}: "${e.hex}"`).join('\n')
-  // 대표로 6번 한 장만 보낸다. 몸통은 여섯 장이 공유하고 눈만 다르므로
-  // 여섯 장을 다 보내면 토큰만 여섯 배가 되고 알 수 있는 것은 같다.
-  const rows = packRows({
-    w: DICE_FRAME_SIZE.w,
-    h: DICE_FRAME_SIZE.h,
-    palette: {},
-    rows: DICE_FRAMES[6].rows,
-  })
   const user = [
-    '현재 팔레트:',
-    list,
+    '지금 색:',
+    ...roles.map((e) => `  ${e.role}: "${e.hex}"`),
     '',
-    `형태 (${DICE_FRAME_SIZE.w}x${DICE_FRAME_SIZE.h}, 반복을 접은 표기):`,
-    ...rows,
+    `형태 (${shape.w}x${shape.h}, 반복을 접은 표기):`,
+    ...packRows({ w: shape.w, h: shape.h, palette: {}, rows: shape.rows }),
     '',
-    '위는 눈이 6/2/3 인 한 장입니다. 나머지 다섯 장도 몸통은 같고 눈만 다릅니다.',
+    shape.note,
     '',
     `컨셉: ${prompt}`,
     '이 컨셉에 맞는 배색 한 벌을 돌려주세요.',
-    'char 에는 위 여덟 자리 이름을, hex 에는 새 색을 적습니다.',
+    `char 에는 위 ${roles.length} 자리 이름을, hex 에는 새 색을 적습니다.`,
     'name 에는 짧은 이름을 적으세요.',
   ].join('\n')
 
-  const out = await generatePaletteSet(config, DICESET_INSTRUCTION, user)
+  const out = await generatePaletteSet(config, instruction, user)
   const first = out.variants?.[0]
   if (!first) throw new Error('모델이 배색을 돌려주지 않았습니다.')
   return first
@@ -605,7 +643,8 @@ export function createGeminiHandler(config: ServerConfig): ApiHandler {
         parsed.mode === 'add' ||
         parsed.mode === 'recolor' ||
         parsed.mode === 'virtual' ||
-        parsed.mode === 'diceset'
+        parsed.mode === 'diceset' ||
+        parsed.mode === 'buttonset'
           ? parsed.mode
           : 'create'
 
@@ -624,16 +663,63 @@ export function createGeminiHandler(config: ServerConfig): ApiHandler {
           return true
         }
       }
-      // 주사위 세트는 구워 둔 프레임을 쓰므로 보낼 그림이 없다.
-      if (mode !== 'create' && mode !== 'diceset' && base === undefined) {
+      // 구워 둔 프레임을 쓰는 모드는 보낼 그림이 없다.
+      const BAKED: GenerateMode[] = ['diceset', 'buttonset']
+      if (mode !== 'create' && !BAKED.includes(mode) && base === undefined) {
         send(res, 400, { error: '이 모드에는 기존 그림이 필요합니다.' })
+        return true
+      }
+
+      // 컨셉 하나로 버튼 네 상태를 만든다.
+      if (mode === 'buttonset') {
+        const w = Math.min(512, Math.max(BUTTON_SIZE.w, Number(parsed.w) || 64))
+        const h = Math.min(512, Math.max(BUTTON_SIZE.h, Number(parsed.h) || 32))
+        const answer = await callGeminiRoles(
+          config,
+          prompt,
+          BUTTONSET_INSTRUCTION,
+          BUTTON_ROLE_LIST,
+          {
+            w: BUTTON_SIZE.w,
+            h: BUTTON_SIZE.h,
+            rows: BUTTON_ROWS,
+            note: '가장자리는 그대로 두고 가운데만 늘려 어떤 크기든 만듭니다.',
+          },
+        )
+        const items = buttonSetFromRoles(w, h, answer.palette ?? [])
+
+        const given = new Set((answer.palette ?? []).map((e) => (e.char ?? '').trim()))
+        const missing = BUTTON_ROLE_LIST.map((e) => e.role as string).filter((r) => !given.has(r))
+        if (missing.length === BUTTON_ROLE_LIST.length) {
+          send(res, 502, {
+            error: '모델이 배색을 돌려주지 않았습니다. 컨셉을 더 구체적으로 적어보세요.',
+          })
+          return true
+        }
+
+        send(res, 200, {
+          name: (answer.name ?? '').trim() || prompt.slice(0, 12) || '버튼',
+          states: items.map((it) => ({ state: it.state, spec: it.spec })),
+          warnings:
+            missing.length > 0
+              ? [`${missing.join(', ')} 는 모델이 빠뜨려 원래 색을 유지했습니다.`]
+              : [],
+          model: config.model,
+        } satisfies ButtonSetResponse)
         return true
       }
 
       // 컨셉 하나로 주사위 여섯 개를 만든다.
       // 형태는 구워 둔 프레임이라 모델에게 보내지도, 받지도 않는다.
       if (mode === 'diceset') {
-        const answer = await callGeminiDiceSet(config, prompt)
+        const answer = await callGeminiRoles(config, prompt, DICESET_INSTRUCTION, DICE_ROLE_LIST, {
+          w: DICE_FRAME_SIZE.w,
+          h: DICE_FRAME_SIZE.h,
+          // 대표로 6번 한 장만 보낸다. 몸통은 여섯 장이 공유하고 눈만 다르므로
+          // 여섯 장을 다 보내면 토큰만 여섯 배가 되고 알 수 있는 것은 같다.
+          rows: DICE_FRAMES[6].rows,
+          note: '위는 눈이 6/2/3 인 한 장입니다. 나머지 다섯 장도 몸통은 같고 눈만 다릅니다.',
+        })
         const dice = diceSetSpecsFromRoles(answer.palette ?? [])
 
         const given = new Set((answer.palette ?? []).map((e) => (e.char ?? '').trim()))

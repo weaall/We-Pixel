@@ -189,3 +189,37 @@ export const BUTTON_PRESETS: ReadonlyArray<{ name: string; tone: ButtonTone }> =
 /** 역할 -> 지금 색. 모델에게 보여 줄 목록이다. */
 export const BUTTON_ROLE_LIST: ReadonlyArray<{ role: ButtonRole; char: string; hex: string }> =
   Object.entries(BUTTON_ROLE_OF).map(([char, role]) => ({ role, char, hex: BUTTON_PALETTE[char] }))
+
+/**
+ * 역할 이름으로 받은 배색을 팔레트로 바꾼다.
+ *
+ * 못 알아본 자리는 원래 색으로 둔다. 빠뜨린 색을 검정으로 만들면 버튼에 구멍이
+ * 뚫린 것처럼 보인다.
+ */
+export function buttonPaletteFromRoles(
+  entries: ReadonlyArray<{ char?: string; hex?: string }>,
+): Record<string, string> {
+  const byRole = new Map<string, string>()
+  for (const entry of entries) {
+    const role = (entry.char ?? '').trim()
+    const hex = (entry.hex ?? '').trim()
+    if (!/^#[0-9a-fA-F]{6}$/.test(hex)) continue
+    byRole.set(role, hex)
+  }
+
+  const palette: Record<string, string> = { ...BUTTON_PALETTE }
+  for (const { role, char } of BUTTON_ROLE_LIST) {
+    const hex = byRole.get(role)
+    if (hex) palette[char] = hex
+  }
+  return palette
+}
+
+export function buttonSetFromRoles(
+  w: number,
+  h: number,
+  entries: ReadonlyArray<{ char?: string; hex?: string }>,
+): ButtonSetItem[] {
+  const palette = buttonPaletteFromRoles(entries)
+  return BUTTON_STATES.map((state) => ({ state, spec: buttonSpec({ w, h, state, palette }) }))
+}

@@ -887,7 +887,7 @@ var TooManyColorsError = class extends Error {
   }
 };
 function toSpec(doc) {
-  const charOf = /* @__PURE__ */ new Map();
+  const charOf2 = /* @__PURE__ */ new Map();
   const palette = {};
   const rows = [];
   for (let y = 0; y < doc.h; y++) {
@@ -900,11 +900,11 @@ function toSpec(doc) {
       }
       const c = [doc.data[i], doc.data[i + 1], doc.data[i + 2], doc.data[i + 3]];
       const hex4 = toHex(c);
-      let ch = charOf.get(hex4);
+      let ch = charOf2.get(hex4);
       if (ch === void 0) {
-        if (charOf.size >= MAX_SPEC_COLORS) throw new TooManyColorsError(charOf.size + 1);
-        ch = ALPHABET[charOf.size];
-        charOf.set(hex4, ch);
+        if (charOf2.size >= MAX_SPEC_COLORS) throw new TooManyColorsError(charOf2.size + 1);
+        ch = ALPHABET[charOf2.size];
+        charOf2.set(hex4, ch);
         palette[ch] = hex4;
       }
       row += ch;
@@ -1791,6 +1791,158 @@ function diceSetSpecsFromRoles(entries) {
     pips: DICE_FRAMES[top].pips,
     spec: diceSpec(top, palette)
   }));
+}
+
+// src/core/generate/buttonFrame.ts
+var BUTTON_SIZE = { w: 32, h: 32 };
+var BUTTON_BORDER = { "left": 5, "right": 5, "top": 5, "bottom": 5 };
+var BUTTON_PALETTE = {
+  "a": "#ffffff",
+  "b": "#000000",
+  "c": "#c9dcf3",
+  "d": "#364353",
+  "e": "#566c86",
+  ".": "transparent"
+};
+var BUTTON_ROLE_OF = {
+  "a": "halo",
+  "b": "outline",
+  "e": "face",
+  "d": "bevelShade",
+  "c": "bevelLit"
+};
+var BUTTON_ROWS = [
+  "...aaaaaaaaaaaaaaaaaaaaaaaaaa...",
+  "..abbbbbbbbbbbbbbbbbbbbbbbbbba..",
+  ".abccccccccccccccccccccccccddba.",
+  "abccceeeeeeeeeeeeeeeeeeeeeeeddba",
+  "abcceeeeeeeeeeeeeeeeeeeeeeeeedba",
+  "abceeeeeeeeeeeeeeeeeeeeeeeeeedba",
+  "abceeeeeeeeeeeeeeeeeeeeeeeeeedba",
+  "abceeeeeeeeeeeeeeeeeeeeeeeeeedba",
+  "abceeeeeeeeeeeeeeeeeeeeeeeeeedba",
+  "abceeeeeeeeeeeeeeeeeeeeeeeeeedba",
+  "abceeeeeeeeeeeeeeeeeeeeeeeeeedba",
+  "abceeeeeeeeeeeeeeeeeeeeeeeeeedba",
+  "abceeeeeeeeeeeeeeeeeeeeeeeeeedba",
+  "abceeeeeeeeeeeeeeeeeeeeeeeeeedba",
+  "abceeeeeeeeeeeeeeeeeeeeeeeeeedba",
+  "abceeeeeeeeeeeeeeeeeeeeeeeeeedba",
+  "abceeeeeeeeeeeeeeeeeeeeeeeeeedba",
+  "abceeeeeeeeeeeeeeeeeeeeeeeeeedba",
+  "abceeeeeeeeeeeeeeeeeeeeeeeeeedba",
+  "abceeeeeeeeeeeeeeeeeeeeeeeeeedba",
+  "abceeeeeeeeeeeeeeeeeeeeeeeeeedba",
+  "abceeeeeeeeeeeeeeeeeeeeeeeeeedba",
+  "abceeeeeeeeeeeeeeeeeeeeeeeeeedba",
+  "abceeeeeeeeeeeeeeeeeeeeeeeeeedba",
+  "abceeeeeeeeeeeeeeeeeeeeeeeeeedba",
+  "abceeeeeeeeeeeeeeeeeeeeeeeeeedba",
+  "abceeeeeeeeeeeeeeeeeeeeeeeeeedba",
+  "abdeeeeeeeeeeeeeeeeeeeeeeeeeddba",
+  "abddeeeeeeeeeeeeeeeeeeeeeeedddba",
+  ".abddddddddddddddddddddddddddba.",
+  "..abbbbbbbbbbbbbbbbbbbbbbbbbba..",
+  "...aaaaaaaaaaaaaaaaaaaaaaaaaa..."
+];
+
+// src/core/generate/button.ts
+var BUTTON_STATES = ["normal", "hover", "pressed", "disabled"];
+var MIN_BUTTON_W = BUTTON_BORDER.left + BUTTON_BORDER.right + 1;
+var MIN_BUTTON_H = BUTTON_BORDER.top + BUTTON_BORDER.bottom + 1;
+function stretchRows(w, h) {
+  const width = Math.max(MIN_BUTTON_W, Math.floor(w));
+  const height = Math.max(MIN_BUTTON_H, Math.floor(h));
+  const { left, right, top, bottom } = BUTTON_BORDER;
+  const fillW = width - left - right;
+  const fillH = height - top - bottom;
+  const midRow = BUTTON_ROWS[top];
+  const row = (src) => src.slice(0, left) + src[left].repeat(fillW) + src.slice(BUTTON_SIZE.w - right);
+  const out = [];
+  for (let y = 0; y < top; y++) out.push(row(BUTTON_ROWS[y]));
+  for (let y = 0; y < fillH; y++) out.push(row(midRow));
+  for (let y = 0; y < bottom; y++) out.push(row(BUTTON_ROWS[BUTTON_SIZE.h - bottom + y]));
+  return out;
+}
+function charOf(role) {
+  const found = Object.keys(BUTTON_ROLE_OF).find((c) => BUTTON_ROLE_OF[c] === role);
+  if (found === void 0) throw new Error(`${role} \uBB38\uC790\uB97C \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4`);
+  return found;
+}
+function pressPalette(palette) {
+  const lit = charOf("bevelLit");
+  const shade = charOf("bevelShade");
+  return { ...palette, [lit]: palette[shade], [shade]: palette[lit] };
+}
+var defaultButtonTone = {
+  hue: 213,
+  saturation: 1,
+  saturationBoost: 0,
+  contrast: 1,
+  brightness: 0
+};
+function statePalette(palette, state) {
+  if (state === "normal") return { ...palette };
+  if (state === "pressed") return pressPalette(palette);
+  const shift = (hex4, dl, ds) => {
+    const color = parseHex(hex4);
+    if (!color) return hex4;
+    const [r, g, b, a] = color;
+    const mix = (v) => Math.round(v + (dl > 0 ? (255 - v) * dl : v * dl));
+    const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    const gray = (v) => Math.round(v + (lum - v) * ds);
+    return toHex([mix(gray(r)), mix(gray(g)), mix(gray(b)), a]);
+  };
+  const out = {};
+  for (const [ch, hex4] of Object.entries(palette)) {
+    if (hex4 === "transparent") {
+      out[ch] = hex4;
+      continue;
+    }
+    if (BUTTON_ROLE_OF[ch] === "outline") {
+      out[ch] = hex4;
+      continue;
+    }
+    out[ch] = state === "hover" ? shift(hex4, 0.16, 0) : shift(hex4, -0.1, 0.75);
+  }
+  return out;
+}
+function buttonSpec(o) {
+  const rows = stretchRows(o.w, o.h);
+  return {
+    w: rows[0].length,
+    h: rows.length,
+    palette: statePalette(o.palette ?? BUTTON_PALETTE, o.state),
+    rows
+  };
+}
+var BUTTON_PRESETS = [
+  { name: "\uAE30\uBCF8", tone: { ...defaultButtonTone } },
+  { name: "\uD480", tone: { ...defaultButtonTone, hue: 138, saturationBoost: 0.1 } },
+  { name: "\uACBD\uACE0", tone: { ...defaultButtonTone, hue: 8, saturationBoost: 0.16 } },
+  { name: "\uD669\uAE08", tone: { ...defaultButtonTone, hue: 44, saturationBoost: 0.3, brightness: 0.04 } },
+  { name: "\uBCF4\uB77C", tone: { ...defaultButtonTone, hue: 282, saturationBoost: 0.12 } },
+  { name: "\uC7AC", tone: { ...defaultButtonTone, hue: 213, saturation: 0.15 } }
+];
+var BUTTON_ROLE_LIST = Object.entries(BUTTON_ROLE_OF).map(([char, role]) => ({ role, char, hex: BUTTON_PALETTE[char] }));
+function buttonPaletteFromRoles(entries) {
+  const byRole = /* @__PURE__ */ new Map();
+  for (const entry of entries) {
+    const role = (entry.char ?? "").trim();
+    const hex4 = (entry.hex ?? "").trim();
+    if (!/^#[0-9a-fA-F]{6}$/.test(hex4)) continue;
+    byRole.set(role, hex4);
+  }
+  const palette = { ...BUTTON_PALETTE };
+  for (const { role, char } of BUTTON_ROLE_LIST) {
+    const hex4 = byRole.get(role);
+    if (hex4) palette[char] = hex4;
+  }
+  return palette;
+}
+function buttonSetFromRoles(w, h, entries) {
+  const palette = buttonPaletteFromRoles(entries);
+  return BUTTON_STATES.map((state) => ({ state, spec: buttonSpec({ w, h, state, palette }) }));
 }
 
 // src/core/compose.ts
@@ -36342,6 +36494,26 @@ var VIRTUAL_INSTRUCTION = [
   '\uADF8\uB9BC\uC740 \uBC18\uBCF5\uC744 \uC811\uC740 \uD45C\uAE30\uB85C \uC90D\uB2C8\uB2E4. "a~10" \uC740 a\uAC00 10\uCE78 \uC774\uC5B4\uC9C4\uB2E4\uB294 \uB73B\uC785\uB2C8\uB2E4.',
   "\uC5B4\uB290 char\uAC00 \uB113\uC740 \uBA74\uC774\uACE0 \uC5B4\uB290 char\uAC00 \uC881\uC740 \uC7A5\uC2DD\uC778\uC9C0 \uC5EC\uAE30\uC11C \uC77D\uC5B4\uB0B4\uC138\uC694."
 ].join("\n");
+var BUTTONSET_INSTRUCTION = [
+  "\uB2F9\uC2E0\uC740 \uD53D\uC140 \uC544\uD2B8 UI \uBC84\uD2BC\uC758 \uBC30\uC0C9\uC744 \uC815\uD558\uB294 \uC0AC\uB78C\uC785\uB2C8\uB2E4.",
+  "",
+  "\uD615\uD0DC\uB294 \uC774\uBBF8 \uC815\uD574\uC838 \uC788\uACE0 \uBC14\uAFC0 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uB2F9\uC2E0\uC774 \uC815\uD558\uB294 \uAC83\uC740 \uC0C9\uBFD0\uC785\uB2C8\uB2E4.",
+  "",
+  "\uAC01 \uC790\uB9AC\uAC00 \uBB34\uC5C7\uC778\uC9C0:",
+  "  halo        \uBC14\uAE65 \uD14C\uB450\uB9AC. \uBC84\uD2BC\uC744 \uBC30\uACBD\uC5D0\uC11C \uB5BC\uC5B4 \uB193\uB294 \uD55C \uACB9\uC785\uB2C8\uB2E4.",
+  "  outline     \uC678\uACFD\uC120. \uAC00\uC7A5 \uC5B4\uB461\uC2B5\uB2C8\uB2E4.",
+  "  bevelLit    \uC67C\uCABD \uC704 \uACBD\uC0AC. \uBE5B\uC744 \uBC1B\uB294 \uCABD\uC774\uB77C \uBCF8\uCCB4\uBCF4\uB2E4 \uBC1D\uC2B5\uB2C8\uB2E4.",
+  "  face        \uBCF8\uCCB4. \uAC00\uC7A5 \uB113\uC2B5\uB2C8\uB2E4.",
+  "  bevelShade  \uC624\uB978\uCABD \uC544\uB798 \uACBD\uC0AC. \uADF8\uB298\uC774\uB77C \uBCF8\uCCB4\uBCF4\uB2E4 \uC5B4\uB461\uC2B5\uB2C8\uB2E4.",
+  "",
+  "\uADDC\uCE59:",
+  "- \uADF8\uB9BC\uC744 \uADF8\uB9AC\uC9C0 \uB9C8\uC138\uC694. \uC0C9 \uBAA9\uB85D\uB9CC \uB3CC\uB824\uC90D\uB2C8\uB2E4.",
+  "- \uB2E4\uC12F \uC790\uB9AC\uB97C \uD558\uB098\uB3C4 \uBE60\uC9D0\uC5C6\uC774 \uB3CC\uB824\uC8FC\uC138\uC694. \uC5C6\uB294 \uC774\uB984\uC744 \uB9CC\uB4E4\uC9C0 \uB9C8\uC138\uC694.",
+  "- \uBC1D\uAE30 \uC21C\uC11C\uB97C \uC9C0\uD0A4\uC138\uC694: halo > bevelLit > face > bevelShade > outline.",
+  "  \uC774\uAC83\uC774 \uAE68\uC9C0\uBA74 \uBC84\uD2BC\uC774 \uB20C\uB9B0 \uAC83\uCC98\uB7FC, \uB610\uB294 \uB0A9\uC791\uD55C \uC0AC\uAC01\uD615\uC73C\uB85C \uBCF4\uC785\uB2C8\uB2E4.",
+  "- \uBC84\uD2BC \uC704\uC5D0 \uAE00\uC790\uAC00 \uC62C\uB77C\uAC11\uB2C8\uB2E4. face \uB294 \uAE00\uC790\uAC00 \uC77D\uD790 \uB9CC\uD07C \uACE0\uB978 \uC0C9\uC774\uC5B4\uC57C \uD569\uB2C8\uB2E4.",
+  '- hex \uB294 "#rrggbb" \uD615\uC2DD\uC785\uB2C8\uB2E4.'
+].join("\n");
 var DICESET_INSTRUCTION = [
   "\uB2F9\uC2E0\uC740 \uC8FC\uC0AC\uC704 \uC138\uD2B8\uC758 \uBC30\uC0C9\uC744 \uC815\uD558\uB294 \uC0AC\uB78C\uC785\uB2C8\uB2E4.",
   "",
@@ -36538,29 +36710,22 @@ async function callGeminiPaletteSet(config2, prompt, plan, preview, count) {
   const out = await generatePaletteSet(config2, VIRTUAL_INSTRUCTION, user);
   return out.variants;
 }
-async function callGeminiDiceSet(config2, prompt) {
-  const list = DICE_ROLE_LIST.map((e) => `  ${e.role}: "${e.hex}"`).join("\n");
-  const rows = packRows({
-    w: DICE_FRAME_SIZE.w,
-    h: DICE_FRAME_SIZE.h,
-    palette: {},
-    rows: DICE_FRAMES[6].rows
-  });
+async function callGeminiRoles(config2, prompt, instruction, roles, shape) {
   const user = [
-    "\uD604\uC7AC \uD314\uB808\uD2B8:",
-    list,
+    "\uC9C0\uAE08 \uC0C9:",
+    ...roles.map((e) => `  ${e.role}: "${e.hex}"`),
     "",
-    `\uD615\uD0DC (${DICE_FRAME_SIZE.w}x${DICE_FRAME_SIZE.h}, \uBC18\uBCF5\uC744 \uC811\uC740 \uD45C\uAE30):`,
-    ...rows,
+    `\uD615\uD0DC (${shape.w}x${shape.h}, \uBC18\uBCF5\uC744 \uC811\uC740 \uD45C\uAE30):`,
+    ...packRows({ w: shape.w, h: shape.h, palette: {}, rows: shape.rows }),
     "",
-    "\uC704\uB294 \uB208\uC774 6/2/3 \uC778 \uD55C \uC7A5\uC785\uB2C8\uB2E4. \uB098\uBA38\uC9C0 \uB2E4\uC12F \uC7A5\uB3C4 \uBAB8\uD1B5\uC740 \uAC19\uACE0 \uB208\uB9CC \uB2E4\uB985\uB2C8\uB2E4.",
+    shape.note,
     "",
     `\uCEE8\uC149: ${prompt}`,
     "\uC774 \uCEE8\uC149\uC5D0 \uB9DE\uB294 \uBC30\uC0C9 \uD55C \uBC8C\uC744 \uB3CC\uB824\uC8FC\uC138\uC694.",
-    "char \uC5D0\uB294 \uC704 \uC5EC\uB35F \uC790\uB9AC \uC774\uB984\uC744, hex \uC5D0\uB294 \uC0C8 \uC0C9\uC744 \uC801\uC2B5\uB2C8\uB2E4.",
+    `char \uC5D0\uB294 \uC704 ${roles.length} \uC790\uB9AC \uC774\uB984\uC744, hex \uC5D0\uB294 \uC0C8 \uC0C9\uC744 \uC801\uC2B5\uB2C8\uB2E4.`,
     "name \uC5D0\uB294 \uC9E7\uC740 \uC774\uB984\uC744 \uC801\uC73C\uC138\uC694."
   ].join("\n");
-  const out = await generatePaletteSet(config2, DICESET_INSTRUCTION, user);
+  const out = await generatePaletteSet(config2, instruction, user);
   const first = out.variants?.[0];
   if (!first) throw new Error("\uBAA8\uB378\uC774 \uBC30\uC0C9\uC744 \uB3CC\uB824\uC8FC\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.");
   return first;
@@ -36622,7 +36787,7 @@ function createGeminiHandler(config2) {
         return true;
       }
       const { genW, genH, factor } = planGeneration(w, h);
-      const mode = parsed.mode === "edit" || parsed.mode === "add" || parsed.mode === "recolor" || parsed.mode === "virtual" || parsed.mode === "diceset" ? parsed.mode : "create";
+      const mode = parsed.mode === "edit" || parsed.mode === "add" || parsed.mode === "recolor" || parsed.mode === "virtual" || parsed.mode === "diceset" || parsed.mode === "buttonset" ? parsed.mode : "create";
       let base;
       let baseDoc;
       if (mode !== "create" && isSpecLike(parsed.base)) {
@@ -36636,12 +36801,52 @@ function createGeminiHandler(config2) {
           return true;
         }
       }
-      if (mode !== "create" && mode !== "diceset" && base === void 0) {
+      const BAKED = ["diceset", "buttonset"];
+      if (mode !== "create" && !BAKED.includes(mode) && base === void 0) {
         send(res, 400, { error: "\uC774 \uBAA8\uB4DC\uC5D0\uB294 \uAE30\uC874 \uADF8\uB9BC\uC774 \uD544\uC694\uD569\uB2C8\uB2E4." });
         return true;
       }
+      if (mode === "buttonset") {
+        const w2 = Math.min(512, Math.max(BUTTON_SIZE.w, Number(parsed.w) || 64));
+        const h2 = Math.min(512, Math.max(BUTTON_SIZE.h, Number(parsed.h) || 32));
+        const answer = await callGeminiRoles(
+          config2,
+          prompt,
+          BUTTONSET_INSTRUCTION,
+          BUTTON_ROLE_LIST,
+          {
+            w: BUTTON_SIZE.w,
+            h: BUTTON_SIZE.h,
+            rows: BUTTON_ROWS,
+            note: "\uAC00\uC7A5\uC790\uB9AC\uB294 \uADF8\uB300\uB85C \uB450\uACE0 \uAC00\uC6B4\uB370\uB9CC \uB298\uB824 \uC5B4\uB5A4 \uD06C\uAE30\uB4E0 \uB9CC\uB4ED\uB2C8\uB2E4."
+          }
+        );
+        const items = buttonSetFromRoles(w2, h2, answer.palette ?? []);
+        const given = new Set((answer.palette ?? []).map((e) => (e.char ?? "").trim()));
+        const missing = BUTTON_ROLE_LIST.map((e) => e.role).filter((r) => !given.has(r));
+        if (missing.length === BUTTON_ROLE_LIST.length) {
+          send(res, 502, {
+            error: "\uBAA8\uB378\uC774 \uBC30\uC0C9\uC744 \uB3CC\uB824\uC8FC\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uCEE8\uC149\uC744 \uB354 \uAD6C\uCCB4\uC801\uC73C\uB85C \uC801\uC5B4\uBCF4\uC138\uC694."
+          });
+          return true;
+        }
+        send(res, 200, {
+          name: (answer.name ?? "").trim() || prompt.slice(0, 12) || "\uBC84\uD2BC",
+          states: items.map((it) => ({ state: it.state, spec: it.spec })),
+          warnings: missing.length > 0 ? [`${missing.join(", ")} \uB294 \uBAA8\uB378\uC774 \uBE60\uB728\uB824 \uC6D0\uB798 \uC0C9\uC744 \uC720\uC9C0\uD588\uC2B5\uB2C8\uB2E4.`] : [],
+          model: config2.model
+        });
+        return true;
+      }
       if (mode === "diceset") {
-        const answer = await callGeminiDiceSet(config2, prompt);
+        const answer = await callGeminiRoles(config2, prompt, DICESET_INSTRUCTION, DICE_ROLE_LIST, {
+          w: DICE_FRAME_SIZE.w,
+          h: DICE_FRAME_SIZE.h,
+          // 대표로 6번 한 장만 보낸다. 몸통은 여섯 장이 공유하고 눈만 다르므로
+          // 여섯 장을 다 보내면 토큰만 여섯 배가 되고 알 수 있는 것은 같다.
+          rows: DICE_FRAMES[6].rows,
+          note: "\uC704\uB294 \uB208\uC774 6/2/3 \uC778 \uD55C \uC7A5\uC785\uB2C8\uB2E4. \uB098\uBA38\uC9C0 \uB2E4\uC12F \uC7A5\uB3C4 \uBAB8\uD1B5\uC740 \uAC19\uACE0 \uB208\uB9CC \uB2E4\uB985\uB2C8\uB2E4."
+        });
         const dice = diceSetSpecsFromRoles(answer.palette ?? []);
         const given = new Set((answer.palette ?? []).map((e) => (e.char ?? "").trim()));
         const known = new Set(DICE_ROLE_LIST.map((e) => e.role));
