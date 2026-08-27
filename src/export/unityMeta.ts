@@ -26,6 +26,96 @@ export function newGuid(): string {
   return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
+export interface SpriteSlice {
+  name: string
+  /** 왼쪽 위 기준 좌표. 이 함수가 유니티의 아래 기준으로 뒤집는다. */
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+/**
+ * 유니티 스프라이트의 내부 id.
+ *
+ * 0 이면 유니티가 임포트할 때 새로 매기고, 그러면 이미 씬에 놓인 참조가 끊긴다.
+ * 이름에서 뽑아 항상 같은 값이 나오게 한다 — 다시 내보내도 참조가 유지된다.
+ */
+function internalId(name: string): number {
+  let h = 2166136261
+  for (let i = 0; i < name.length; i++) {
+    h ^= name.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  // 음수와 0을 피한다.
+  return (h >>> 1) + 1
+}
+
+/** 이름에서 뽑는 GUID 꼴 32자리. 다시 내보내도 같아야 참조가 유지된다. */
+function stableId(name: string): string {
+  let out = ''
+  let h = internalId(name)
+  while (out.length < 32) {
+    h = Math.imul(h ^ (h >>> 15), 2246822507)
+    h = Math.imul(h ^ (h >>> 13), 3266489909)
+    out += (h >>> 0).toString(16).padStart(8, '0')
+  }
+  return out.slice(0, 32)
+}
+
+/**
+ * 여러 장을 담은 텍스처의 .meta.
+ *
+ * 유니티의 rect 는 텍스처 아래에서 잰다. 화면 좌표 그대로 넣으면 위아래가
+ * 뒤집힌 채 잘린다.
+ */
+export function spriteSheetMeta(
+  opts: UnityImportOptions,
+  slices: ReadonlyArray<SpriteSlice>,
+  sheetHeight: number,
+  guid = newGuid(),
+): string {
+  const single = textureMeta(opts, guid)
+
+  const table = slices
+    .map((s) => `  - first:\n      213: ${internalId(s.name)}\n    second: ${s.name}`)
+    .join('\n')
+
+  const list = slices
+    .map((s) => {
+      const bottom = sheetHeight - s.y - s.h
+      return [
+        '    - serializedVersion: 2',
+        `      name: ${s.name}`,
+        '      rect:',
+        '        serializedVersion: 2',
+        `        x: ${s.x}`,
+        `        y: ${bottom}`,
+        `        width: ${s.w}`,
+        `        height: ${s.h}`,
+        '      alignment: 0',
+        '      pivot: {x: 0.5, y: 0.5}',
+        '      border: {x: 0, y: 0, z: 0, w: 0}',
+        '      outline: []',
+        '      physicsShape: []',
+        '      tessellationDetail: 0',
+        '      bones: []',
+        `      spriteID: ${stableId(s.name)}`,
+        `      internalID: ${internalId(s.name)}`,
+        '      vertices: []',
+        '      indices: ',
+        '      edges: []',
+        '      weights: []',
+      ].join('\n')
+    })
+    .join('\n')
+
+  return single
+    .replace('  internalIDToNameTable: []', `  internalIDToNameTable:\n${table}`)
+    .replace('  spriteMode: 1', '  spriteMode: 2')
+    .replace('    sprites: []', `    sprites:\n${list}`)
+}
+
 export function textureMeta(opts: UnityImportOptions, guid = newGuid()): string {
   return `fileFormatVersion: 2
 guid: ${guid}
@@ -153,7 +243,11 @@ public class PixelArtImportSettings : AssetPostprocessor
         var importer = (TextureImporter)assetImporter;
 
         importer.textureType = TextureImporterType.Sprite;
-        importer.spriteImportMode = SpriteImportMode.Single;
+
+        // 시트는 건드리지 않는다. Single 로 되돌리면 .meta 의 슬라이스가 지워져
+        // 여섯 칸이 한 장으로 합쳐진다.
+        if (importer.spriteImportMode != SpriteImportMode.Multiple)
+            importer.spriteImportMode = SpriteImportMode.Single;
         importer.spritePixelsPerUnit = PixelsPerUnit;
 
         // 픽셀 아트의 필수 조건: 보간 금지, 압축 금지, 밉맵 금지.

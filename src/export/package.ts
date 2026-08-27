@@ -4,7 +4,8 @@ import { toSpec, TooManyColorsError } from '../core/codec'
 import type { ActionSpec } from './csharp'
 import { generateActorScript, sanitizeClassName } from './csharp'
 import type { UnityImportOptions } from './unityMeta'
-import { importPostprocessor, newGuid, textureMeta } from './unityMeta'
+import { importPostprocessor, newGuid, spriteSheetMeta, textureMeta } from './unityMeta'
+import { packAtlas } from './atlas'
 
 /**
  * PNG 인코딩은 플랫폼마다 수단이 다르다 (브라우저는 canvas, Node는 zlib).
@@ -14,6 +15,16 @@ export type PngEncoder = (doc: PixelDoc, scale: number) => Promise<Uint8Array | 
 
 export interface PackageOptions {
   doc: PixelDoc
+  /**
+   * 한 텍스처로 묶을 여러 장.
+   *
+   * 주면 doc 대신 이것을 시트로 만들고 .meta 에 칸 정보를 넣는다. 여섯 장을
+   * 따로 내보내면 유니티에서 면을 바꿀 때마다 다른 스프라이트를 참조해야 해서
+   * 굴리는 연출을 짜기 번거롭다.
+   */
+  sheet?: ReadonlyArray<{ name: string; doc: PixelDoc }>
+  /** 시트 한 줄에 몇 장. 0이면 한 줄로 늘어놓는다. */
+  sheetColumns?: number
   /** 에셋 파일명 기준이 되는 이름. */
   assetName: string
   action: ActionSpec
@@ -52,9 +63,25 @@ export async function buildPackage(o: PackageOptions): Promise<PackageResult> {
   }
 
   // 1. 에셋 본체 — 반드시 1배율이어야 한다.
-  const png = await o.encodePng(o.doc, 1)
+  const atlas =
+    o.sheet && o.sheet.length > 0
+      ? packAtlas(o.sheet, { columns: o.sheetColumns })
+      : null
+  const mainDoc = atlas ? atlas.doc : o.doc
+  const png = await o.encodePng(mainDoc, 1)
   add(`${assetFolder}/${assetName}.png`, png)
-  add(`${assetFolder}/${assetName}.png.meta`, textureMeta(o.unity, newGuid()))
+  add(
+    `${assetFolder}/${assetName}.png.meta`,
+    atlas
+      ? spriteSheetMeta(o.unity, atlas.slices, atlas.doc.h, newGuid())
+      : textureMeta(o.unity, newGuid()),
+  )
+  if (atlas) {
+    warnings.push(
+      `${atlas.slices.length}장을 ${atlas.doc.w}x${atlas.doc.h} 시트로 묶었습니다 ` +
+        `(${atlas.columns}열 x ${atlas.rows}행).`,
+    )
+  }
 
   // 2. 액터 스크립트
   const cls = sanitizeClassName(o.action.className)
@@ -68,8 +95,14 @@ export async function buildPackage(o: PackageOptions): Promise<PackageResult> {
   // 4. 재편집용 원본 데이터
   if (o.includeSpec) {
     try {
-      const spec = toSpec(o.doc)
-      add(`${assetName}.spec.json`, JSON.stringify(spec, null, 2))
+      // 시트는 장별로 남긴다. 묶인 텍스처만 남기면 한 장만 고치기 어렵다.
+      if (atlas && o.sheet) {
+        for (const item of o.sheet) {
+          add(`spec/${sanitizeFileName(item.name)}.spec.json`, JSON.stringify(toSpec(item.doc), null, 2))
+        }
+      } else {
+        add(`${assetName}.spec.json`, JSON.stringify(toSpec(o.doc), null, 2))
+      }
     } catch (err) {
       if (err instanceof TooManyColorsError) {
         warnings.push(`spec.json 제외: ${err.message}. PNG로는 문제없이 저장됩니다.`)
@@ -81,7 +114,7 @@ export async function buildPackage(o: PackageOptions): Promise<PackageResult> {
 
   // 5. 확대 미리보기 — 공유용. 유니티에 넣으면 안 된다.
   if (o.previewScale > 1) {
-    const preview = await o.encodePng(o.doc, o.previewScale)
+    const preview = await o.encodePng(mainDoc, o.previewScale)
     add(`preview/${assetName}@${o.previewScale}x.png`, preview)
   }
 
@@ -93,7 +126,8 @@ export async function buildPackage(o: PackageOptions): Promise<PackageResult> {
       className: cls,
       unity: o.unity,
       includePostprocessor: o.includePostprocessor,
-      size: `${o.doc.w}x${o.doc.h}`,
+      size: `${mainDoc.w}x${mainDoc.h}`,
+      slices: atlas?.slices.map((s) => s.name),
     }),
   )
 
@@ -117,12 +151,22 @@ function readme(a: {
   unity: UnityImportOptions
   includePostprocessor: boolean
   size: string
+  slices?: string[]
 }): string {
   const lines = [
     `# ${a.assetName}`,
     '',
     `We-Pixel에서 내보낸 ${a.size} 픽셀 에셋 패키지입니다.`,
     '',
+    ...(a.slices
+      ? [
+          `스프라이트 시트입니다. ${a.slices.length}칸이 잘려 있습니다: ${a.slices.join(', ')}`,
+          '',
+          '유니티에서 텍스처를 펼치면 칸마다 스프라이트가 나옵니다.',
+          'Sprite Editor 를 열 필요 없습니다 — .meta 에 칸 정보가 들어 있습니다.',
+          '',
+        ]
+      : []),
     '## 배치 방법',
     '',
     '압축을 푼 뒤 `Assets` 폴더를 유니티 프로젝트 루트에 그대로 덮어씁니다.',

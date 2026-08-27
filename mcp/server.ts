@@ -244,6 +244,10 @@ server.registerTool(
       contrast: z.number().min(0.2).max(2).default(1).describe('명암 폭 배율.'),
       brightness: z.number().min(-0.3).max(0.3).default(0).describe('밝기 이동.'),
       preset: z.string().optional().describe('미리 만들어 둔 조합 이름.'),
+      sheet: z
+        .boolean()
+        .default(false)
+        .describe('참이면 여섯 장을 한 텍스처로 묶은 유니티 패키지도 내보낸다.'),
       pipHue: z.number().min(0).max(360).optional().describe('눈만 따로 옮길 색조.'),
       palette: z
         .array(z.object({ char: z.string(), hex: z.string() }))
@@ -251,7 +255,7 @@ server.registerTool(
         .describe('직접 정한 배색. char 는 위 자리 이름, hex 는 "#rrggbb".'),
     },
   },
-  async ({ name, hue, saturation, contrast, brightness, preset, pipHue, palette }) => {
+  async ({ name, hue, saturation, contrast, brightness, preset, pipHue, palette, sheet }) => {
     try {
       const named = preset
         ? DICE_PRESETS.find((p) => p.name === preset)
@@ -284,6 +288,23 @@ server.registerTool(
       for (const d of set) saved.push(await saveSpec(`${name}-${d.top}`, d.spec))
 
       const preview = fromSpec(set[5].spec)
+      let sheetNote: string | null = null
+      if (sheet) {
+        const pkg = await buildPackage({
+          doc: preview,
+          sheet: set.map((d) => ({ name: `${name}_${d.top}`, doc: fromSpec(d.spec) })),
+          assetName: `${name}Dice`,
+          action: defaultActionSpec,
+          unity: defaultImportOptions,
+          includePostprocessor: true,
+          includeSpec: true,
+          previewScale: 0,
+          encodePng: encodePngAsync,
+        })
+        const path = await writeExport(pkg.filename, pkg.bytes)
+        sheetNote = `시트: ${path} (${pkg.warnings.join(' ')})`
+      }
+
       const scale = previewScale(preview)
       return {
         content: [
@@ -293,6 +314,7 @@ server.registerTool(
               `주사위 세트 여섯 개를 만들었습니다.`,
               ...set.map((d, i) => `  윗면 ${d.top} (${d.pips.join('/')}) -> ${saved[i]}`),
               '보이는 세 면은 위/왼쪽/오른쪽이고 마주보는 면의 합은 7입니다.',
+              ...(sheetNote ? [sheetNote] : []),
               `아래 이미지는 윗면 6 을 ${scale}배로 확대한 것입니다.`,
             ].join('\n'),
           },

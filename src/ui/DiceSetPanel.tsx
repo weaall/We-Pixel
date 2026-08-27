@@ -4,6 +4,10 @@ import { fromSpec } from '../core/codec'
 import type { PixelDoc } from '../core/doc'
 import type { DiceTone, DiceToneOptions } from '../core/generate/diceSet'
 import { DICE_PRESETS, makeDiceSetToned } from '../core/generate/diceSet'
+import { defaultActionSpec } from '../export/csharp'
+import { buildPackage } from '../export/package'
+import { docToPngBlob, downloadBlob } from '../export/png'
+import { defaultImportOptions } from '../export/unityMeta'
 import { DocThumb } from './DocThumb'
 
 export interface DiceSetPanelProps {
@@ -32,6 +36,39 @@ export function DiceSetPanel(props: DiceSetPanelProps) {
   const [concept, setConcept] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [note, setNote] = useState<string | null>(null)
+
+  /**
+   * 여섯 장을 한 텍스처로 묶어 내보낸다.
+   *
+   * 따로 내보내면 유니티에서 면을 바꿀 때마다 다른 스프라이트를 참조해야 해서
+   * 굴리는 연출을 짜기 번거롭다. 시트 한 장이면 인덱스만 바꾸면 된다.
+   */
+  const exportSheet = async () => {
+    setBusy(true)
+    setError(null)
+    setNote(null)
+    try {
+      const label = preset || '주사위'
+      const res = await buildPackage({
+        doc: set[0].doc,
+        sheet: set.map((d) => ({ name: `${label}_${d.top}`, doc: d.doc })),
+        assetName: `${label}Dice`,
+        action: defaultActionSpec,
+        unity: defaultImportOptions,
+        includePostprocessor: true,
+        includeSpec: true,
+        previewScale: 0,
+        encodePng: docToPngBlob,
+      })
+      downloadBlob(new Blob([res.bytes], { type: 'application/zip' }), res.filename)
+      setNote(res.warnings.join(' ') || `${res.filename} 을 내려받았습니다.`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const set = useMemo(() => makeDiceSetToned({ body, pip }), [body, pip])
 
@@ -142,7 +179,16 @@ export function DiceSetPanel(props: DiceSetPanelProps) {
         <button className="grow" onClick={() => push(set.map((d) => d.doc), preset || '주사위')}>
           이 색으로 6장
         </button>
+        <button
+          className="grow"
+          disabled={busy}
+          onClick={exportSheet}
+          data-tip="여섯 장을 한 텍스처로 묶고 .meta 에 칸 정보를 넣습니다"
+        >
+          유니티 시트
+        </button>
       </div>
+      {note !== null && <p className="hint">{note}</p>}
       <p className="hint">
         AI 없이 색조만 돌려서도 만들 수 있습니다. 형태는 어느 쪽이든 구워 둔
         프레임 그대로입니다.

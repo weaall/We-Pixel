@@ -152,7 +152,7 @@ try {
   // 주사위 세트: 여섯 개가 같은 배색을 쓰고 눈만 달라야 한다
   const set = await client.callTool({
     name: 'generate_dice_set',
-    arguments: { name: 'SmokeSet', preset: '황금' },
+    arguments: { name: 'SmokeSet', preset: '황금', sheet: true },
   })
   const setText = textOf(set)
   check(
@@ -165,6 +165,8 @@ try {
     [1, 2, 3, 4, 5, 6].every((n) => setText.includes(`SmokeSet-${n}`)),
   )
   check('마주보는 면의 합이 7', setText.includes('(1/4/5)') && setText.includes('(6/2/3)'))
+  // 여섯 장이 한 텍스처로 묶여야 유니티에서 인덱스만 바꿔 면을 고를 수 있다.
+  check('시트로 묶는다', setText.includes('384x64') && setText.includes('.zip'), (setText.match(/시트: .*/) ?? [''])[0])
 
   const one = await client.callTool({ name: 'get_design', arguments: { name: 'SmokeSet-1' } })
   const six = await client.callTool({ name: 'get_design', arguments: { name: 'SmokeSet-6' } })
