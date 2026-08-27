@@ -64,6 +64,11 @@ export interface VariantOptions {
   hue: number
   /** 채도 배율. 1이면 원본 그대로. */
   saturation: number
+  /**
+   * 채도 더하기. 배율만으로는 회색을 색으로 만들 수 없다 — 0에 무엇을 곱해도
+   * 0이다. 돌 같은 무채색 몸통을 금이나 얼음으로 바꾸려면 이것이 필요하다.
+   */
+  saturationBoost: number
   /** 명암 폭 배율. 0.5를 기준으로 밀고 당긴다. */
   contrast: number
   /** 밝기 이동. -0.5 ~ 0.5. */
@@ -75,6 +80,7 @@ export interface VariantOptions {
 export const defaultVariantOptions: VariantOptions = {
   hue: 30,
   saturation: 1,
+  saturationBoost: 0,
   contrast: 1,
   brightness: 0,
   keepNeutral: true,
@@ -110,7 +116,7 @@ export function variantMappings(
     const hi = hsl.l >= 0.97 ? 1 : 0.97
     const to = fromHsl(
       o.hue + offset,
-      clamp(hsl.s * o.saturation, 0, 1),
+      clamp(hsl.s * o.saturation + o.saturationBoost, 0, 1),
       clamp(0.5 + (hsl.l - 0.5) * o.contrast + o.brightness, lo, hi),
       color[3],
     )

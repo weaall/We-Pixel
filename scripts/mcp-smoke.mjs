@@ -152,7 +152,7 @@ try {
   // 주사위 세트: 여섯 개가 같은 배색을 쓰고 눈만 달라야 한다
   const set = await client.callTool({
     name: 'generate_dice_set',
-    arguments: { name: 'SmokeSet', hue: 200 },
+    arguments: { name: 'SmokeSet', preset: '황금' },
   })
   const setText = textOf(set)
   check(
@@ -171,6 +171,12 @@ try {
   const paletteOfText = (r) => (textOf(r).match(/palette: (\{[^}]*\})/) ?? [])[1]
   check('세트가 배색을 함께 쓴다', paletteOfText(one) === paletteOfText(six), paletteOfText(one))
   check('눈은 서로 다르다', textOf(one).split('rows:')[1] !== textOf(six).split('rows:')[1])
+
+  const badPreset = await client.callTool({
+    name: 'generate_dice_set',
+    arguments: { name: 'SmokeBad', preset: '없는것' },
+  })
+  check('없는 조합은 오류', badPreset.isError === true, textOf(badPreset).split('\n')[0])
 
   const listed = await client.callTool({ name: 'list_designs', arguments: {} })
   const listText = textOf(listed)

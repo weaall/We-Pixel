@@ -25,6 +25,40 @@ export const DICE_PALETTE: Record<string, string> = {
   ".": "transparent"
 }
 
+/**
+ * 각 문자가 무엇인지. 몸통과 눈을 따로 바꾸려면 이것이 있어야 합니다.
+ *
+ * outline   실루엣 외곽선
+ * edge      밝은 모서리 (면과 면 사이, 외곽선 안쪽)
+ * faceLit   윗면과 왼쪽면
+ * faceEdge  오른쪽면 모서리
+ * faceShade 오른쪽면 (그늘)
+ * pipEdge   눈 테두리 (파인 자국)
+ * pipShade  눈 어두운 쪽
+ * pipLit    눈 밝은 쪽
+ */
+export type DiceRole =
+  | 'outline'
+  | 'edge'
+  | 'faceLit'
+  | 'faceEdge'
+  | 'faceShade'
+  | 'pipEdge'
+  | 'pipShade'
+  | 'pipLit'
+
+export const DICE_ROLE_OF: Record<string, DiceRole> = {
+  "g": "pipShade",
+  "h": "pipLit",
+  "f": "pipEdge",
+  "b": "outline",
+  "c": "faceShade",
+  "e": "faceEdge",
+  "a": "faceLit",
+  "d": "edge"
+}
+
+
 export interface DiceFrame {
   /** 보이는 세 면의 눈: 위, 왼쪽, 오른쪽. */
   pips: [number, number, number]

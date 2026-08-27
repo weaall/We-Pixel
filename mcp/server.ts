@@ -7,8 +7,13 @@ import type { PixelSpec } from '../src/core/codec'
 import { fromSpec, toSpec, TRANSPARENT_CHAR } from '../src/core/codec'
 import type { PixelDoc } from '../src/core/doc'
 import { MAX_SIZE, MIN_SIZE } from '../src/core/doc'
-import { defaultVariantOptions, defaultVariantSetOptions, makeVariants } from '../src/core/generate/variants'
-import { dicePaletteList, diceSetSpecs, diceSetSpecsFrom } from '../src/core/generate/diceSet'
+import { defaultVariantSetOptions, makeVariants } from '../src/core/generate/variants'
+import {
+  DICE_PRESETS,
+  DICE_ROLE_LIST,
+  diceSetSpecsToned,
+  diceSetSpecsFromRoles,
+} from '../src/core/generate/diceSet'
 import { defaultActionSpec } from '../src/export/csharp'
 import { buildPackage } from '../src/export/package'
 import { defaultImportOptions } from '../src/export/unityMeta'
@@ -224,8 +229,13 @@ server.registerTool(
       '여섯 개가 배색 하나를 함께 쓰므로 세트로 보인다 — 장마다 색을 따로 정하면',
       '따로 만든 주사위처럼 보인다.',
       '',
-      'palette 를 주면 그대로 쓰고, 비우면 hue 로 원본 색조를 옮긴다.',
-      'get_palette 대신 아래 char 목록을 쓰면 된다: ' + dicePaletteList().map((e) => e.char).join(', '),
+      '자리마다 이름이 있다:',
+      ...DICE_ROLE_LIST.map((e) => `  ${e.role} (지금 ${e.hex})`),
+      '',
+      'palette 를 주면 그대로 쓰고, 비우면 preset 또는 hue 로 정한다.',
+      `preset: ${DICE_PRESETS.map((p) => p.name).join(', ')}`,
+      '',
+      '밝기 순서를 지켜야 입체감이 산다: edge > faceLit > faceEdge > faceShade > outline.',
     ].join('\n'),
     inputSchema: {
       name: nameArg.describe('저장 이름의 접두어. "Fire" 면 Fire-1 ... Fire-6 으로 저장된다.'),
@@ -233,26 +243,41 @@ server.registerTool(
       saturation: z.number().min(0).max(2).default(1).describe('채도 배율.'),
       contrast: z.number().min(0.2).max(2).default(1).describe('명암 폭 배율.'),
       brightness: z.number().min(-0.3).max(0.3).default(0).describe('밝기 이동.'),
+      preset: z.string().optional().describe('미리 만들어 둔 조합 이름.'),
+      pipHue: z.number().min(0).max(360).optional().describe('눈만 따로 옮길 색조.'),
       palette: z
         .array(z.object({ char: z.string(), hex: z.string() }))
         .optional()
-        .describe('직접 정한 배색. char 는 원본 팔레트의 문자, hex 는 "#rrggbb".'),
+        .describe('직접 정한 배색. char 는 위 자리 이름, hex 는 "#rrggbb".'),
     },
   },
-  async ({ name, hue, saturation, contrast, brightness, palette }) => {
+  async ({ name, hue, saturation, contrast, brightness, preset, pipHue, palette }) => {
     try {
+      const named = preset
+        ? DICE_PRESETS.find((p) => p.name === preset)
+        : undefined
+      if (preset && !named) {
+        return fail(
+          new Error(`"${preset}" 는 없는 조합입니다. ${DICE_PRESETS.map((p) => p.name).join(', ')} 중에 고르세요.`),
+        )
+      }
+
       const set =
         palette && palette.length > 0
-          ? diceSetSpecsFrom(palette)
-          : diceSetSpecs({
-              ...defaultVariantOptions,
-              hue,
-              saturation,
-              contrast,
-              brightness,
-              // 주사위는 외곽선도 몸통 색을 따라가야 세트로 보인다.
-              keepNeutral: false,
-            })
+          ? diceSetSpecsFromRoles(palette)
+          : named
+            ? diceSetSpecsToned(named.tone)
+            : diceSetSpecsToned({
+                body: { hue, saturation, saturationBoost: 0.3, contrast, brightness },
+                // 눈은 몸통과 따로 움직인다. 안 그러면 붉은 눈이 몸통을 따라간다.
+                pip: {
+                  hue: pipHue ?? 350,
+                  saturation: 1,
+                  saturationBoost: 0,
+                  contrast: 1,
+                  brightness: 0,
+                },
+              })
 
       const saved: string[] = []
       // spec 을 그대로 저장한다. toSpec 으로 다시 매기면 장마다 문자가 달라진다.

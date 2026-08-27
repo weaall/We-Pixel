@@ -2,8 +2,8 @@ import { useMemo, useState } from 'react'
 import type { PixelSpec } from '../core/codec'
 import { fromSpec } from '../core/codec'
 import type { PixelDoc } from '../core/doc'
-import { makeDiceSet } from '../core/generate/diceSet'
-import { defaultVariantOptions } from '../core/generate/variants'
+import type { DiceTone, DiceToneOptions } from '../core/generate/diceSet'
+import { DICE_PRESETS, makeDiceSetToned } from '../core/generate/diceSet'
 import { DocThumb } from './DocThumb'
 
 export interface DiceSetPanelProps {
@@ -21,28 +21,25 @@ export interface DiceSetPanelProps {
  * 정하고, 여섯 개가 그 배색 하나를 함께 쓴다 — 그래야 세트로 보인다.
  */
 export function DiceSetPanel(props: DiceSetPanelProps) {
-  const [hue, setHue] = useState(defaultVariantOptions.hue)
-  const [saturation, setSaturation] = useState(defaultVariantOptions.saturation)
-  const [contrast, setContrast] = useState(defaultVariantOptions.contrast)
-  const [brightness, setBrightness] = useState(defaultVariantOptions.brightness)
+  /**
+   * 몸통과 눈을 따로 둔다. 하나로 묶으면 색조를 옮길 때 붉은 눈이 몸통을 따라
+   * 끌려가 "돌 몸통에 붉은 눈" 같은 조합을 만들 수 없다.
+   */
+  const [body, setBody] = useState<DiceTone>(DICE_PRESETS[0].tone.body)
+  const [pip, setPip] = useState<DiceTone>(DICE_PRESETS[0].tone.pip)
+  const [preset, setPreset] = useState(DICE_PRESETS[0].name)
 
   const [concept, setConcept] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const set = useMemo(
-    () =>
-      makeDiceSet({
-        ...defaultVariantOptions,
-        hue,
-        saturation,
-        contrast,
-        brightness,
-        // 주사위는 외곽선도 몸통 색을 따라가야 세트로 보인다.
-        keepNeutral: false,
-      }),
-    [hue, saturation, contrast, brightness],
-  )
+  const set = useMemo(() => makeDiceSetToned({ body, pip }), [body, pip])
+
+  const applyPreset = (p: { name: string; tone: DiceToneOptions }) => {
+    setPreset(p.name)
+    setBody(p.tone.body)
+    setPip(p.tone.pip)
+  }
 
   const push = (docs: ReadonlyArray<PixelDoc>, label: string) => {
     props.onGenerateMany(
@@ -99,6 +96,20 @@ export function DiceSetPanel(props: DiceSetPanelProps) {
         마주보는 면의 합은 7입니다.
       </p>
 
+      <div className="row">
+        <div className="grow seg wrap">
+          {DICE_PRESETS.map((p) => (
+            <button
+              key={p.name}
+              className={preset === p.name ? 'active' : ''}
+              onClick={() => applyPreset(p)}
+            >
+              {p.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="row" style={{ marginTop: 10 }}>
         <input
           className="grow"
@@ -124,62 +135,11 @@ export function DiceSetPanel(props: DiceSetPanelProps) {
 
       <hr className="sep" />
 
-      <div className="row">
-        <label>색조 {Math.round(hue)}°</label>
-        <input
-          className="grow"
-          type="range"
-          min={0}
-          max={360}
-          value={hue}
-          onChange={(e) => setHue(Number(e.target.value))}
-        />
-      </div>
-
-      <div className="row">
-        <label>채도 {saturation.toFixed(2)}</label>
-        <input
-          className="grow"
-          type="range"
-          min={0}
-          max={2}
-          step={0.05}
-          value={saturation}
-          onChange={(e) => setSaturation(Number(e.target.value))}
-        />
-      </div>
-
-      <div className="row">
-        <label>명암 {contrast.toFixed(2)}</label>
-        <input
-          className="grow"
-          type="range"
-          min={0.2}
-          max={2}
-          step={0.05}
-          value={contrast}
-          onChange={(e) => setContrast(Number(e.target.value))}
-        />
-      </div>
-
-      <div className="row">
-        <label>
-          밝기 {brightness > 0 ? '+' : ''}
-          {brightness.toFixed(2)}
-        </label>
-        <input
-          className="grow"
-          type="range"
-          min={-0.3}
-          max={0.3}
-          step={0.02}
-          value={brightness}
-          onChange={(e) => setBrightness(Number(e.target.value))}
-        />
-      </div>
+      <ToneControls label="몸통" tone={body} onChange={(t) => { setBody(t); setPreset('') }} />
+      <ToneControls label="눈" tone={pip} onChange={(t) => { setPip(t); setPreset('') }} />
 
       <div className="row" style={{ marginTop: 10 }}>
-        <button className="grow" onClick={() => push(set.map((d) => d.doc), '주사위')}>
+        <button className="grow" onClick={() => push(set.map((d) => d.doc), preset || '주사위')}>
           이 색으로 6장
         </button>
       </div>
@@ -188,5 +148,52 @@ export function DiceSetPanel(props: DiceSetPanelProps) {
         프레임 그대로입니다.
       </p>
     </section>
+  )
+}
+
+interface ToneControlsProps {
+  label: string
+  tone: DiceTone
+  onChange: (tone: DiceTone) => void
+}
+
+function ToneControls({ label, tone, onChange }: ToneControlsProps) {
+  const set = (patch: Partial<DiceTone>) => onChange({ ...tone, ...patch })
+
+  return (
+    <>
+      <div className="row">
+        <label className="tone-label">{label}</label>
+        <input
+          className="grow"
+          type="range"
+          min={0}
+          max={360}
+          value={tone.hue}
+          onChange={(e) => set({ hue: Number(e.target.value) })}
+          data-tip={`색조 ${Math.round(tone.hue)}도`}
+        />
+        <input
+          className="grow"
+          type="range"
+          min={0}
+          max={1}
+          step={0.02}
+          value={tone.saturationBoost}
+          onChange={(e) => set({ saturationBoost: Number(e.target.value) })}
+          data-tip={`선명하게 ${tone.saturationBoost.toFixed(2)} — 회색에는 배율이 듣지 않습니다`}
+        />
+        <input
+          className="grow"
+          type="range"
+          min={-0.3}
+          max={0.3}
+          step={0.02}
+          value={tone.brightness}
+          onChange={(e) => set({ brightness: Number(e.target.value) })}
+          data-tip={`밝기 ${tone.brightness > 0 ? '+' : ''}${tone.brightness.toFixed(2)}`}
+        />
+      </div>
+    </>
   )
 }

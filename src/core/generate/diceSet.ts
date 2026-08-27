@@ -2,7 +2,8 @@ import { parseHex, toHex } from '../color'
 import type { PixelSpec } from '../codec'
 import { fromSpec, unpackRows } from '../codec'
 import type { PixelDoc } from '../doc'
-import { DICE_FRAMES, DICE_FRAME_SIZE, DICE_PALETTE } from './diceFrames'
+import type { DiceRole } from './diceFrames'
+import { DICE_FRAMES, DICE_FRAME_SIZE, DICE_PALETTE, DICE_ROLE_OF } from './diceFrames'
 import type { PaletteEntry, VariantOptions } from './variants'
 import { variantMappings } from './variants'
 
@@ -158,4 +159,184 @@ export function isRealDice(pips: ReadonlyArray<number>): boolean {
   if (pips.length !== 3) return false
   if (pips.some((v) => !Number.isInteger(v) || v < 1 || v > 6)) return false
   return new Set(pips.map((v) => Math.min(v, 7 - v))).size === 3
+}
+
+// ---- 역할별 톤 ----------------------------------------------------------
+
+/** 눈은 몸통과 따로 움직여야 한다. "돌 몸통에 붉은 눈" 이 안 되면 반쪽이다. */
+export const PIP_ROLES: ReadonlySet<DiceRole> = new Set<DiceRole>([
+  'pipEdge',
+  'pipShade',
+  'pipLit',
+])
+
+export type DiceTone = Pick<
+  VariantOptions,
+  'hue' | 'saturation' | 'saturationBoost' | 'contrast' | 'brightness'
+>
+
+export const defaultDiceTone: DiceTone = {
+  hue: 30,
+  saturation: 1,
+  saturationBoost: 0,
+  contrast: 1,
+  brightness: 0,
+}
+
+export interface DiceToneOptions {
+  body: DiceTone
+  pip: DiceTone
+}
+
+function entriesFor(want: (role: DiceRole) => boolean): PaletteEntry[] {
+  return dicePalette().filter((e) => {
+    const hex = toHex(e.color)
+    const char = Object.keys(DICE_PALETTE).find((c) => DICE_PALETTE[c] === hex)
+    const role = char ? DICE_ROLE_OF[char] : undefined
+    return role !== undefined && want(role)
+  })
+}
+
+/**
+ * 몸통과 눈을 따로 옮긴 팔레트.
+ *
+ * 두 무리를 따로 계산해야 한다. 함께 넣으면 대표 색조가 하나로 잡혀 붉은 눈이
+ * 몸통을 따라 파랗게 끌려간다.
+ */
+export function diceTonedPalette(o: DiceToneOptions): Record<string, string> {
+  const isPip = (role: DiceRole) => PIP_ROLES.has(role)
+  const bodyMap = new Map(
+    variantMappings(entriesFor((r) => !isPip(r)), { ...o.body, keepNeutral: false }).map((m) => [
+      m.from.join(','),
+      toHex(m.to),
+    ]),
+  )
+  const pipMap = new Map(
+    variantMappings(entriesFor(isPip), { ...o.pip, keepNeutral: false }).map((m) => [
+      m.from.join(','),
+      toHex(m.to),
+    ]),
+  )
+
+  const out: Record<string, string> = {}
+  for (const [char, hex] of Object.entries(DICE_PALETTE)) {
+    if (hex === 'transparent') {
+      out[char] = hex
+      continue
+    }
+    const color = parseHex(hex)
+    const key = color ? color.join(',') : ''
+    out[char] = bodyMap.get(key) ?? pipMap.get(key) ?? hex
+  }
+  return out
+}
+
+/** 톤으로 세트를 만든다. 여섯 장이 같은 팔레트를 쓴다. */
+export function diceSetSpecsToned(o: DiceToneOptions): Array<{
+  top: DiceTop
+  pips: [number, number, number]
+  spec: PixelSpec
+}> {
+  const palette = diceTonedPalette(o)
+  return DICE_TOPS.map((top) => ({
+    top,
+    pips: DICE_FRAMES[top].pips,
+    spec: diceSpec(top, palette),
+  }))
+}
+
+export function makeDiceSetToned(o: DiceToneOptions): Dice[] {
+  return diceSetSpecsToned(o).map(({ top, pips, spec }) => ({ top, pips, doc: fromSpec(spec) }))
+}
+
+/**
+ * 자주 쓰는 조합.
+ *
+ * 몸통은 무채색이라 배율만으로는 색이 붙지 않는다 — 0에 무엇을 곱해도 0이다.
+ * 그래서 채도를 더한다.
+ */
+export const DICE_PRESETS: ReadonlyArray<{ name: string; tone: DiceToneOptions }> = [
+  {
+    name: '돌',
+    tone: {
+      body: { ...defaultDiceTone, hue: 210, saturationBoost: 0.04 },
+      pip: { ...defaultDiceTone, hue: 350 },
+    },
+  },
+  {
+    name: '황금',
+    tone: {
+      body: { ...defaultDiceTone, hue: 44, saturationBoost: 0.62, brightness: 0.06 },
+      pip: { ...defaultDiceTone, hue: 22, saturation: 0.7, brightness: -0.06 },
+    },
+  },
+  {
+    name: '얼음',
+    tone: {
+      body: { ...defaultDiceTone, hue: 196, saturationBoost: 0.42, brightness: 0.1 },
+      pip: { ...defaultDiceTone, hue: 210, saturation: 0.55, brightness: 0.08 },
+    },
+  },
+  {
+    name: '독',
+    tone: {
+      body: { ...defaultDiceTone, hue: 132, saturationBoost: 0.34 },
+      pip: { ...defaultDiceTone, hue: 88, saturation: 0.8, brightness: 0.04 },
+    },
+  },
+  {
+    name: '뼈',
+    tone: {
+      body: { ...defaultDiceTone, hue: 44, saturationBoost: 0.16, brightness: 0.12 },
+      pip: { ...defaultDiceTone, hue: 20, saturation: 0.5, brightness: -0.08 },
+    },
+  },
+  {
+    name: '불꽃',
+    tone: {
+      body: { ...defaultDiceTone, hue: 18, saturationBoost: 0.5 },
+      pip: { ...defaultDiceTone, hue: 48, saturation: 0.9, brightness: 0.16 },
+    },
+  },
+]
+
+/** 역할 -> 지금 색. 모델에게 보여 줄 목록이다. */
+export const DICE_ROLE_LIST: ReadonlyArray<{ role: DiceRole; char: string; hex: string }> =
+  Object.entries(DICE_ROLE_OF).map(([char, role]) => ({ role, char, hex: DICE_PALETTE[char] }))
+
+/**
+ * 역할 이름으로 받은 배색을 팔레트로 바꾼다.
+ *
+ * 모델에게 a, b, c 를 주면 무엇을 칠하는지 모른 채 고른다. 역할 이름을 주면
+ * "눈의 밝은 쪽" 이라는 것을 알고 고른다 — 같은 모델이 훨씬 잘한다.
+ */
+export function diceSetPaletteFromRoles(
+  entries: ReadonlyArray<{ char?: string; hex?: string }>,
+): Record<string, string> {
+  const byRole = new Map<string, string>()
+  for (const entry of entries) {
+    const role = (entry.char ?? '').trim()
+    const hex = (entry.hex ?? '').trim()
+    if (!/^#[0-9a-fA-F]{6}$/.test(hex)) continue
+    byRole.set(role, hex)
+  }
+
+  const palette: Record<string, string> = { ...DICE_PALETTE }
+  for (const { role, char } of DICE_ROLE_LIST) {
+    const hex = byRole.get(role)
+    // 못 알아본 자리는 원래 색으로 둔다. 빠뜨린 색을 검정으로 만들면 구멍이 뚫린다.
+    if (hex) palette[char] = hex
+  }
+  return palette
+}
+
+export function diceSetSpecsFromRoles(
+  entries: ReadonlyArray<{ char?: string; hex?: string }>,
+): Array<{ top: DiceTop; pips: [number, number, number]; spec: PixelSpec }> {
+  const palette = diceSetPaletteFromRoles(entries)
+  return DICE_TOPS.map((top) => ({
+    top,
+    pips: DICE_FRAMES[top].pips,
+    spec: diceSpec(top, palette),
+  }))
 }

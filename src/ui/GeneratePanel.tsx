@@ -45,6 +45,7 @@ export function GeneratePanel(props: GeneratePanelProps) {
   const variants = useMemo(
     () =>
       makeVariants(props.doc, {
+        ...defaultVariantSetOptions,
         count,
         hue,
         step,

@@ -1227,6 +1227,16 @@ var DICE_PALETTE = {
   "h": "#860327",
   ".": "transparent"
 };
+var DICE_ROLE_OF = {
+  "g": "pipShade",
+  "h": "pipLit",
+  "f": "pipEdge",
+  "b": "outline",
+  "c": "faceShade",
+  "e": "faceEdge",
+  "a": "faceLit",
+  "d": "edge"
+};
 var DICE_FRAMES = {
   1: {
     pips: [1, 4, 5],
@@ -1684,6 +1694,7 @@ function matchesAt(doc, i, from, tolerance) {
 var defaultVariantOptions = {
   hue: 30,
   saturation: 1,
+  saturationBoost: 0,
   contrast: 1,
   brightness: 0,
   keepNeutral: true
@@ -1706,33 +1717,80 @@ function diceSpec(top, palette = DICE_PALETTE) {
     rows: unpackRows(frame.rows, DICE_FRAME_SIZE.w)
   };
 }
-function diceSetPaletteFrom(entries) {
-  const palette = { ...DICE_PALETTE };
+var defaultDiceTone = {
+  hue: 30,
+  saturation: 1,
+  saturationBoost: 0,
+  contrast: 1,
+  brightness: 0
+};
+var DICE_PRESETS = [
+  {
+    name: "\uB3CC",
+    tone: {
+      body: { ...defaultDiceTone, hue: 210, saturationBoost: 0.04 },
+      pip: { ...defaultDiceTone, hue: 350 }
+    }
+  },
+  {
+    name: "\uD669\uAE08",
+    tone: {
+      body: { ...defaultDiceTone, hue: 44, saturationBoost: 0.62, brightness: 0.06 },
+      pip: { ...defaultDiceTone, hue: 22, saturation: 0.7, brightness: -0.06 }
+    }
+  },
+  {
+    name: "\uC5BC\uC74C",
+    tone: {
+      body: { ...defaultDiceTone, hue: 196, saturationBoost: 0.42, brightness: 0.1 },
+      pip: { ...defaultDiceTone, hue: 210, saturation: 0.55, brightness: 0.08 }
+    }
+  },
+  {
+    name: "\uB3C5",
+    tone: {
+      body: { ...defaultDiceTone, hue: 132, saturationBoost: 0.34 },
+      pip: { ...defaultDiceTone, hue: 88, saturation: 0.8, brightness: 0.04 }
+    }
+  },
+  {
+    name: "\uBF08",
+    tone: {
+      body: { ...defaultDiceTone, hue: 44, saturationBoost: 0.16, brightness: 0.12 },
+      pip: { ...defaultDiceTone, hue: 20, saturation: 0.5, brightness: -0.08 }
+    }
+  },
+  {
+    name: "\uBD88\uAF43",
+    tone: {
+      body: { ...defaultDiceTone, hue: 18, saturationBoost: 0.5 },
+      pip: { ...defaultDiceTone, hue: 48, saturation: 0.9, brightness: 0.16 }
+    }
+  }
+];
+var DICE_ROLE_LIST = Object.entries(DICE_ROLE_OF).map(([char, role]) => ({ role, char, hex: DICE_PALETTE[char] }));
+function diceSetPaletteFromRoles(entries) {
+  const byRole = /* @__PURE__ */ new Map();
   for (const entry of entries) {
-    const char = (entry.char ?? "").trim();
+    const role = (entry.char ?? "").trim();
     const hex4 = (entry.hex ?? "").trim();
-    if (char.length !== 1 || palette[char] === void 0 || palette[char] === "transparent") continue;
     if (!/^#[0-9a-fA-F]{6}$/.test(hex4)) continue;
-    palette[char] = hex4;
+    byRole.set(role, hex4);
+  }
+  const palette = { ...DICE_PALETTE };
+  for (const { role, char } of DICE_ROLE_LIST) {
+    const hex4 = byRole.get(role);
+    if (hex4) palette[char] = hex4;
   }
   return palette;
 }
-function diceSetSpecsFrom(entries) {
-  const palette = diceSetPaletteFrom(entries);
+function diceSetSpecsFromRoles(entries) {
+  const palette = diceSetPaletteFromRoles(entries);
   return DICE_TOPS.map((top) => ({
     top,
     pips: DICE_FRAMES[top].pips,
     spec: diceSpec(top, palette)
   }));
-}
-function dicePaletteList() {
-  const counts = /* @__PURE__ */ new Map();
-  for (const top of DICE_TOPS) {
-    for (const row of unpackRows(DICE_FRAMES[top].rows, DICE_FRAME_SIZE.w)) {
-      for (const ch of row) counts.set(ch, (counts.get(ch) ?? 0) + 1);
-    }
-  }
-  return Object.entries(DICE_PALETTE).filter(([, hex4]) => hex4 !== "transparent").map(([char, hex4]) => ({ char, hex: hex4, n: counts.get(char) ?? 0 })).sort((a, b) => b.n - a.n).map(({ char, hex: hex4 }) => ({ char, hex: hex4 }));
 }
 
 // src/core/compose.ts
@@ -36291,12 +36349,23 @@ var DICESET_INSTRUCTION = [
   "\uC8FC\uC0AC\uC704 \uC5EC\uC12F \uAC1C\uAC00 \uC774 \uBC30\uC0C9 \uD558\uB098\uB97C \uD568\uAED8 \uC501\uB2C8\uB2E4 \u2014 \uC138\uD2B8\uC774\uBBC0\uB85C \uC5EC\uC12F \uAC1C\uAC00 \uAC19\uC740",
   "\uC0C9\uC774\uC5B4\uC57C \uD569\uB2C8\uB2E4.",
   "",
+  "\uAC01 \uC790\uB9AC\uAC00 \uBB34\uC5C7\uC778\uC9C0:",
+  "  outline    \uC2E4\uB8E8\uC5E3 \uC678\uACFD\uC120. \uAC00\uC7A5 \uC5B4\uB461\uC2B5\uB2C8\uB2E4.",
+  "  edge       \uBC1D\uC740 \uBAA8\uC11C\uB9AC. \uBA74\uACFC \uBA74\uC774 \uB9CC\uB098\uB294 \uC120\uC774\uB77C \uAC00\uC7A5 \uBC1D\uC2B5\uB2C8\uB2E4.",
+  "  faceLit    \uC717\uBA74\uACFC \uC67C\uCABD\uBA74. \uBE5B\uC744 \uBC1B\uB294 \uCABD\uC774\uB77C \uB113\uACE0 \uBC1D\uC2B5\uB2C8\uB2E4.",
+  "  faceEdge   \uC624\uB978\uCABD\uBA74\uC758 \uBAA8\uC11C\uB9AC.",
+  "  faceShade  \uC624\uB978\uCABD\uBA74. \uADF8\uB298\uC774\uB77C faceLit \uBCF4\uB2E4 \uC5B4\uB461\uC2B5\uB2C8\uB2E4.",
+  "  pipEdge    \uB208\uC774 \uD30C\uC778 \uC790\uAD6D. \uB208 \uB458\uB808\uC758 \uADF8\uB9BC\uC790\uC785\uB2C8\uB2E4.",
+  "  pipShade   \uB208\uC758 \uC5B4\uB450\uC6B4 \uCABD.",
+  "  pipLit     \uB208\uC758 \uBC1D\uC740 \uCABD.",
+  "",
   "\uADDC\uCE59:",
   "- \uADF8\uB9BC\uC744 \uADF8\uB9AC\uC9C0 \uB9C8\uC138\uC694. \uC0C9 \uBAA9\uB85D\uB9CC \uB3CC\uB824\uC90D\uB2C8\uB2E4.",
-  "- \uBC1B\uC740 char \uB97C \uD558\uB098\uB3C4 \uBE60\uC9D0\uC5C6\uC774, \uADF8\uB300\uB85C \uB3CC\uB824\uC8FC\uC138\uC694. \uC0C8 char \uB97C \uB9CC\uB4E4\uC9C0 \uB9C8\uC138\uC694.",
-  "- \uBA85\uC554 \uAD00\uACC4\uB97C \uC720\uC9C0\uD558\uC138\uC694. \uC6D0\uBCF8\uC5D0\uC11C \uC5B4\uB450\uC6E0\uB358 \uC0C9\uC740 \uC0C8 \uBC30\uD569\uC5D0\uC11C\uB3C4 \uC5B4\uB450\uC6CC\uC57C \uD569\uB2C8\uB2E4.",
+  "- \uC5EC\uB35F \uC790\uB9AC\uB97C \uD558\uB098\uB3C4 \uBE60\uC9D0\uC5C6\uC774 \uB3CC\uB824\uC8FC\uC138\uC694. \uC5C6\uB294 \uC774\uB984\uC744 \uB9CC\uB4E4\uC9C0 \uB9C8\uC138\uC694.",
+  "- \uBC1D\uAE30 \uC21C\uC11C\uB97C \uC9C0\uD0A4\uC138\uC694: edge > faceLit > faceEdge > faceShade > outline.",
   "  \uC774\uAC83\uC774 \uAE68\uC9C0\uBA74 \uC785\uCCB4\uAC10\uC774 \uC0AC\uB77C\uC838 \uC8FC\uC0AC\uC704\uAC00 \uB0A9\uC791\uD55C \uC721\uAC01\uD615\uC73C\uB85C \uBCF4\uC785\uB2C8\uB2E4.",
   "- \uB208\uACFC \uBAB8\uD1B5\uC740 \uB69C\uB837\uD558\uAC8C \uB2EC\uB77C\uC57C \uD569\uB2C8\uB2E4. \uBE44\uC2B7\uD558\uBA74 \uB208\uC774 \uBA87 \uAC1C\uC778\uC9C0 \uC77D\uD788\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.",
+  "  \uB208\uC740 \uBAB8\uD1B5\uACFC \uB2E4\uB978 \uACC4\uC5F4\uC758 \uC0C9\uC744 \uC4F0\uB294 \uD3B8\uC774 \uC88B\uC2B5\uB2C8\uB2E4.",
   '- hex \uB294 "#rrggbb" \uD615\uC2DD\uC785\uB2C8\uB2E4.'
 ].join("\n");
 function fitRow(row, w) {
@@ -36439,7 +36508,7 @@ function describeBase(base) {
 async function callGeminiPalette(config2, prompt, plan, preview) {
   const list = plan.chars.map((c, i) => `  "${c}": "${plan.hexes[i]}"`).join("\n");
   const user = [
-    "\uD604\uC7AC \uD314\uB808\uD2B8:",
+    "\uC9C0\uAE08 \uC0C9 (\uCC38\uACE0\uC6A9, \uD68C\uC0C9 \uBAB8\uD1B5\uC5D0 \uBD89\uC740 \uB208):",
     list,
     "",
     // 어느 색이 몸통이고 어느 색이 디테일인지 알아야 배합을 제대로 정한다.
@@ -36470,7 +36539,7 @@ async function callGeminiPaletteSet(config2, prompt, plan, preview, count) {
   return out.variants;
 }
 async function callGeminiDiceSet(config2, prompt) {
-  const list = dicePaletteList().map((e) => `  "${e.char}": "${e.hex}"`).join("\n");
+  const list = DICE_ROLE_LIST.map((e) => `  ${e.role}: "${e.hex}"`).join("\n");
   const rows = packRows({
     w: DICE_FRAME_SIZE.w,
     h: DICE_FRAME_SIZE.h,
@@ -36487,7 +36556,9 @@ async function callGeminiDiceSet(config2, prompt) {
     "\uC704\uB294 \uB208\uC774 6/2/3 \uC778 \uD55C \uC7A5\uC785\uB2C8\uB2E4. \uB098\uBA38\uC9C0 \uB2E4\uC12F \uC7A5\uB3C4 \uBAB8\uD1B5\uC740 \uAC19\uACE0 \uB208\uB9CC \uB2E4\uB985\uB2C8\uB2E4.",
     "",
     `\uCEE8\uC149: ${prompt}`,
-    "\uC774 \uCEE8\uC149\uC5D0 \uB9DE\uB294 \uBC30\uC0C9 \uD55C \uBC8C\uC744 \uB3CC\uB824\uC8FC\uC138\uC694. name \uC5D0\uB294 \uC9E7\uC740 \uC774\uB984\uC744 \uC801\uC73C\uC138\uC694."
+    "\uC774 \uCEE8\uC149\uC5D0 \uB9DE\uB294 \uBC30\uC0C9 \uD55C \uBC8C\uC744 \uB3CC\uB824\uC8FC\uC138\uC694.",
+    "char \uC5D0\uB294 \uC704 \uC5EC\uB35F \uC790\uB9AC \uC774\uB984\uC744, hex \uC5D0\uB294 \uC0C8 \uC0C9\uC744 \uC801\uC2B5\uB2C8\uB2E4.",
+    "name \uC5D0\uB294 \uC9E7\uC740 \uC774\uB984\uC744 \uC801\uC73C\uC138\uC694."
   ].join("\n");
   const out = await generatePaletteSet(config2, DICESET_INSTRUCTION, user);
   const first = out.variants?.[0];
@@ -36571,15 +36642,13 @@ function createGeminiHandler(config2) {
       }
       if (mode === "diceset") {
         const answer = await callGeminiDiceSet(config2, prompt);
-        const dice = diceSetSpecsFrom(answer.palette ?? []);
-        const given = new Set(
-          (answer.palette ?? []).map((e) => (e.char ?? "").trim()).filter((c) => c.length === 1)
-        );
-        const known = new Set(dicePaletteList().map((e) => e.char));
+        const dice = diceSetSpecsFromRoles(answer.palette ?? []);
+        const given = new Set((answer.palette ?? []).map((e) => (e.char ?? "").trim()));
+        const known = new Set(DICE_ROLE_LIST.map((e) => e.role));
         const missing = [...known].filter((c) => !given.has(c));
         const notes = [];
         if (missing.length > 0) {
-          notes.push(`${missing.length}\uAC1C \uC0C9\uC740 \uBAA8\uB378\uC774 \uBE60\uB728\uB824 \uC6D0\uB798 \uAC12\uC744 \uC720\uC9C0\uD588\uC2B5\uB2C8\uB2E4.`);
+          notes.push(`${missing.join(", ")} \uB294 \uBAA8\uB378\uC774 \uBE60\uB728\uB824 \uC6D0\uB798 \uC0C9\uC744 \uC720\uC9C0\uD588\uC2B5\uB2C8\uB2E4.`);
         }
         if (missing.length === known.size) {
           send(res, 502, {

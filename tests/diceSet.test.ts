@@ -2,14 +2,21 @@ import { describe, expect, it } from 'vitest'
 import { toSpec } from '../src/core/codec'
 import type { PixelDoc } from '../src/core/doc'
 import { DICE_PALETTE } from '../src/core/generate/diceFrames'
+import { parseHex, toHsl } from '../src/core/color'
 import {
   DICE_TOPS,
   dicePalette,
   dicePaletteList,
   diceDoc,
   diceSetFromPalette,
+  DICE_PRESETS,
+  DICE_ROLE_LIST,
+  defaultDiceTone,
   diceSetSpecs,
   diceSetSpecsFrom,
+  diceSetSpecsFromRoles,
+  diceSetSpecsToned,
+  diceTonedPalette,
   isRealDice,
   makeDiceSet,
 } from '../src/core/generate/diceSet'
@@ -179,5 +186,82 @@ describe('세트가 문자까지 공유한다', () => {
   it('투명은 색으로 바뀌지 않는다', () => {
     const specs = diceSetSpecs({ ...defaultVariantOptions, hue: 90, keepNeutral: false })
     expect(specs[0].spec.palette['.']).toBe('transparent')
+  })
+})
+
+describe('역할별 톤', () => {
+  it('몸통과 눈이 따로 움직인다', () => {
+    // 하나로 묶으면 색조를 옮길 때 붉은 눈이 몸통을 따라 파랗게 끌려간다.
+    const pal = diceTonedPalette({
+      body: { ...defaultDiceTone, hue: 210, saturationBoost: 0.4 },
+      pip: { ...defaultDiceTone, hue: 350 },
+    })
+    const roleHex = (role: string) =>
+      pal[DICE_ROLE_LIST.find((e) => e.role === role)!.char]
+    const bodyHue = toHsl(parseHex(roleHex('faceLit'))!).h
+    const pipHue = toHsl(parseHex(roleHex('pipLit'))!).h
+    expect(Math.abs(bodyHue - 210)).toBeLessThan(40)
+    expect(Math.min(Math.abs(pipHue - 350), Math.abs(pipHue + 10))).toBeLessThan(40)
+  })
+
+  it('채도 더하기가 회색을 색으로 만든다', () => {
+    // 배율만으로는 안 된다. 0에 무엇을 곱해도 0이다.
+    const flat = diceTonedPalette({
+      body: { ...defaultDiceTone, hue: 44, saturation: 2 },
+      pip: defaultDiceTone,
+    })
+    const boosted = diceTonedPalette({
+      body: { ...defaultDiceTone, hue: 44, saturationBoost: 0.6 },
+      pip: defaultDiceTone,
+    })
+    const sat = (pal: Record<string, string>) =>
+      toHsl(parseHex(pal[DICE_ROLE_LIST.find((e) => e.role === 'faceLit')!.char])!).s
+    expect(sat(flat)).toBeLessThan(0.2)
+    expect(sat(boosted)).toBeGreaterThan(0.5)
+  })
+
+  it('밝기 순서가 유지된다', () => {
+    // 깨지면 입체감이 사라져 납작한 육각형으로 보인다.
+    for (const p of DICE_PRESETS) {
+      const pal = diceTonedPalette(p.tone)
+      const l = (role: string) =>
+        toHsl(parseHex(pal[DICE_ROLE_LIST.find((e) => e.role === role)!.char])!).l
+      expect(l('edge')).toBeGreaterThan(l('faceLit'))
+      expect(l('faceLit')).toBeGreaterThan(l('faceShade'))
+      expect(l('faceShade')).toBeGreaterThan(l('outline'))
+    }
+  })
+
+  it('프리셋마다 다른 색이 나온다', () => {
+    const seen = new Set(DICE_PRESETS.map((p) => JSON.stringify(diceTonedPalette(p.tone))))
+    expect(seen.size).toBe(DICE_PRESETS.length)
+  })
+
+  it('톤을 줘도 여섯 장이 같은 팔레트를 쓴다', () => {
+    const specs = diceSetSpecsToned(DICE_PRESETS[1].tone)
+    const first = JSON.stringify(specs[0].spec.palette)
+    for (const s of specs) expect(JSON.stringify(s.spec.palette)).toBe(first)
+  })
+})
+
+describe('역할 이름으로 받기', () => {
+  it('이름으로 색을 입힌다', () => {
+    const specs = diceSetSpecsFromRoles([{ char: 'pipLit', hex: '#00ff88' }])
+    const char = DICE_ROLE_LIST.find((e) => e.role === 'pipLit')!.char
+    expect(specs[0].spec.palette[char]).toBe('#00ff88')
+  })
+
+  it('없는 이름과 잘못된 hex 는 무시한다', () => {
+    const specs = diceSetSpecsFromRoles([
+      { char: 'nope', hex: '#00ff88' },
+      { char: 'pipLit', hex: 'green' },
+    ])
+    const char = DICE_ROLE_LIST.find((e) => e.role === 'pipLit')!.char
+    expect(specs[0].spec.palette[char]).toBe(DICE_PALETTE[char])
+  })
+
+  it('여덟 자리가 모두 있다', () => {
+    expect(DICE_ROLE_LIST).toHaveLength(8)
+    expect(new Set(DICE_ROLE_LIST.map((e) => e.role)).size).toBe(8)
   })
 })

@@ -11,7 +11,7 @@
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { RGBA } from '../src/core/color'
-import { toHex } from '../src/core/color'
+import { toHex, toHsl } from '../src/core/color'
 import { packRow } from '../src/core/codec'
 import { getPixel } from '../src/core/doc'
 import type { PixelDoc } from '../src/core/doc'
@@ -92,6 +92,126 @@ function rowsOf(doc: PixelDoc): string[] {
   return rows
 }
 
+// ---- 역할 판별 ----------------------------------------------------------
+
+/**
+ * 팔레트의 각 색이 무엇인지 알아낸다.
+ *
+ * a, b, c 로만 두면 몸통과 눈을 따로 바꿀 수 없다. 색조 하나로 전부 밀면
+ * 붉은 눈이 파란 눈이 되어 "돌 몸통에 붉은 눈" 같은 조합을 만들 수 없다.
+ *
+ * 규칙은 그림에서 읽는다. 문자를 박아 두면 참고 그림을 바꿨을 때 조용히
+ * 어긋난다.
+ */
+const ROLES = [
+  'outline',
+  'edge',
+  'faceLit',
+  'faceEdge',
+  'faceShade',
+  'pipEdge',
+  'pipShade',
+  'pipLit',
+] as const
+type Role = (typeof ROLES)[number]
+
+function detectRoles(): Record<string, Role> {
+  const chars = Object.keys(palette).filter((c) => c !== TRANSPARENT_CHAR)
+  const hslOf = (ch: string) => toHsl((usage.get(palette[ch]) as { c: RGBA }).c)
+
+  // 1. 눈은 채도로 갈린다. 몸통은 회색조다.
+  const pipCore = chars.filter((ch) => hslOf(ch).s > 0.5).sort((a, b) => hslOf(a).l - hslOf(b).l)
+  if (pipCore.length !== 2) {
+    console.error(`눈 색이 2종이어야 하는데 ${pipCore.length}종입니다: ${pipCore.join(', ')}`)
+    process.exit(1)
+  }
+  const roles: Record<string, Role> = { [pipCore[0]]: 'pipShade', [pipCore[1]]: 'pipLit' }
+
+  // 2. 눈에 가장 자주 맞닿는 색이 눈 테두리다.
+  const touching = new Map<string, number>()
+  const core = new Set(pipCore)
+  for (const f of frames) {
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const ch = charAt(f.doc, x, y)
+      if (ch === TRANSPARENT_CHAR || core.has(ch) || roles[ch]) continue
+      const near = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => {
+        const nx = x + dx
+        const ny = y + dy
+        return nx >= 0 && ny >= 0 && nx < w && ny < h && core.has(charAt(f.doc, nx, ny))
+      })
+      if (near) touching.set(ch, (touching.get(ch) ?? 0) + 1)
+    }
+  }
+  const pipEdge = [...touching].sort((a, b) => b[1] - a[1])[0]?.[0]
+  if (!pipEdge) {
+    console.error('눈 테두리 색을 찾지 못했습니다.')
+    process.exit(1)
+  }
+  roles[pipEdge] = 'pipEdge'
+
+  // 3. 투명과 가장 많이 맞닿는 색이 외곽선이다.
+  const edgeShare = new Map<string, { edge: number; total: number }>()
+  for (const f of frames) {
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const ch = charAt(f.doc, x, y)
+      if (ch === TRANSPARENT_CHAR || roles[ch]) continue
+      const hit = edgeShare.get(ch) ?? { edge: 0, total: 0 }
+      hit.total++
+      const onEdge = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => {
+        const nx = x + dx
+        const ny = y + dy
+        return nx < 0 || ny < 0 || nx >= w || ny >= h || charAt(f.doc, nx, ny) === TRANSPARENT_CHAR
+      })
+      if (onEdge) hit.edge++
+      edgeShare.set(ch, hit)
+    }
+  }
+  const outline = [...edgeShare].sort((a, b) => b[1].edge / b[1].total - a[1].edge / a[1].total)[0][0]
+  roles[outline] = 'outline'
+
+  // 4. 남은 넷은 면으로 가른다. 오른쪽 면에만 쓰이는 둘이 그늘이다.
+  const g = geometry(frames[0].doc)
+  const faceAt = (x: number, y: number) =>
+    Math.abs(x - g.cx) / g.halfW + Math.abs(y - g.waistY) / g.topH <= 1 ? '위' : x < g.cx ? '왼' : '오'
+  const spread = new Map<string, { 위: number; 왼: number; 오: number }>()
+  for (const f of frames) {
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const ch = charAt(f.doc, x, y)
+      if (ch === TRANSPARENT_CHAR || roles[ch]) continue
+      const hit = spread.get(ch) ?? { 위: 0, 왼: 0, 오: 0 }
+      hit[faceAt(x, y) as '위' | '왼' | '오']++
+      spread.set(ch, hit)
+    }
+  }
+  const rest = [...spread.keys()]
+  if (rest.length !== 4) {
+    console.error(`몸통 색이 4종이어야 하는데 ${rest.length}종입니다: ${rest.join(', ')}`)
+    process.exit(1)
+  }
+  const rightOnly = rest
+    .filter((ch) => {
+      const s = spread.get(ch) as { 위: number; 왼: number; 오: number }
+      return s.오 / (s.위 + s.왼 + s.오) > 0.9
+    })
+    .sort((a, b) => hslOf(a).l - hslOf(b).l)
+  if (rightOnly.length !== 2) {
+    console.error(`오른쪽 면 전용 색이 2종이어야 하는데 ${rightOnly.length}종입니다.`)
+    process.exit(1)
+  }
+  roles[rightOnly[0]] = 'faceShade'
+  roles[rightOnly[1]] = 'faceEdge'
+
+  const lit = rest.filter((ch) => !roles[ch]).sort((a, b) => hslOf(a).l - hslOf(b).l)
+  roles[lit[0]] = 'faceLit'
+  roles[lit[1]] = 'edge'
+  return roles
+}
+
+function charAt(doc: PixelDoc, x: number, y: number): string {
+  const c = getPixel(doc, x, y)
+  return c[3] === 0 ? TRANSPARENT_CHAR : (charOf.get(keyOf(c)) as string)
+}
+
 // ---- 면별 눈 세기 -------------------------------------------------------
 
 const PIP_HEX = new Set(
@@ -158,6 +278,9 @@ function countPips(doc: PixelDoc): [number, number, number] {
 
 // ---- 출력 ---------------------------------------------------------------
 
+const roles = detectRoles()
+console.error('역할: ' + Object.entries(roles).map(([ch, r]) => `${ch}=${r}`).join(' '))
+
 const blocks: string[] = []
 for (const f of frames) {
   const pips = countPips(f.doc)
@@ -197,7 +320,25 @@ const out = `// 생성된 파일입니다. 손으로 고치지 마세요.
 export const DICE_FRAME_SIZE = { w: ${w}, h: ${h} } as const
 
 /** 문자 -> "#rrggbb" | "transparent". 모든 프레임이 함께 씁니다. */
-export const DICE_PALETTE: Record<string, string> = ${JSON.stringify(palette, null, 2).replace(/\n/g, '\n')}
+export const DICE_PALETTE: Record<string, string> = ${JSON.stringify(palette, null, 2)}
+
+/**
+ * 각 문자가 무엇인지. 몸통과 눈을 따로 바꾸려면 이것이 있어야 합니다.
+ *
+ * outline   실루엣 외곽선
+ * edge      밝은 모서리 (면과 면 사이, 외곽선 안쪽)
+ * faceLit   윗면과 왼쪽면
+ * faceEdge  오른쪽면 모서리
+ * faceShade 오른쪽면 (그늘)
+ * pipEdge   눈 테두리 (파인 자국)
+ * pipShade  눈 어두운 쪽
+ * pipLit    눈 밝은 쪽
+ */
+export type DiceRole =
+${ROLES.map((r) => `  | '${r}'`).join('\n')}
+
+export const DICE_ROLE_OF: Record<string, DiceRole> = ${JSON.stringify(roles, null, 2)}
+
 
 export interface DiceFrame {
   /** 보이는 세 면의 눈: 위, 왼쪽, 오른쪽. */
