@@ -33,7 +33,7 @@ export interface ImportPanelProps {
   registerDrop: (fn: ((file: File) => void) | null) => void
 }
 
-const SIZE_PRESETS = [16, 32, 48, 64, 96, 128]
+const SIZE_PRESETS = [16, 32, 48, 64, 96, 128, 192, 256]
 
 export function ImportPanel({ width, height, doc, onApply, registerDrop }: ImportPanelProps) {
   const [file, setFile] = useState<File | null>(null)
