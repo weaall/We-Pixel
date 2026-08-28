@@ -567,9 +567,10 @@ label.check input {
   color: var(--muted);
 }
 
+/* 여덟 칸이라 두 줄로 나눈다. 한 줄에 밀어 넣으면 숫자가 잘린다. */
 .preset-row {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 4px;
   margin-top: 6px;
 }

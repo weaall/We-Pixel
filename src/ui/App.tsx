@@ -782,7 +782,7 @@ export function App() {
               />
             </div>
             <div className="preset-row">
-              {[16, 32, 48, 64, 96, 128].map((n) => (
+              {[16, 32, 48, 64, 96, 128, 192, 256].map((n) => (
                 <button
                   key={n}
                   className={sizeW === String(n) && sizeH === String(n) ? 'active' : ''}

@@ -1,14 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { resample, toLogicalGrid } from '../src/core/resample'
 import { fromHsl, parseHex, toHex } from '../src/core/color'
-import { fromSpec, toSpec, TooManyColorsError, usedColors } from '../src/core/codec'
-import {
-  contentBounds,
-  createDoc,
-  getPixel,
-  resizeDoc,
-  setPixel,
-} from '../src/core/doc'
+import { TooManyColorsError, fromSpec, packRows, toSpec, unpackRows, usedColors } from '../src/core/codec'
+import { MAX_SIZE, contentBounds, createDoc, getPixel, resizeDoc, setPixel } from '../src/core/doc'
 import type { PixelDoc } from '../src/core/doc'
 import { History } from '../src/core/history'
 import {
@@ -262,5 +256,26 @@ describe('toLogicalGrid', () => {
     const before = colorsOf(big)
     const { doc } = toLogicalGrid(big)
     for (const color of colorsOf(doc)) expect(before.has(color)).toBe(true)
+  })
+})
+
+describe('가장 큰 캔버스', () => {
+  it('MAX_SIZE 문서가 spec 을 왕복한다', () => {
+    // 256 은 65,536칸이다. 행 길이나 접기가 어긋나면 여기서 드러난다.
+    const doc = createDoc(MAX_SIZE, MAX_SIZE)
+    for (let i = 0; i < MAX_SIZE; i++) setPixel(doc, i, i, [255, 0, 0, 255])
+    for (let i = 0; i < MAX_SIZE; i++) setPixel(doc, i, MAX_SIZE - 1 - i, [0, 0, 255, 255])
+
+    const spec = toSpec(doc)
+    expect(spec.w).toBe(MAX_SIZE)
+    expect(new Set(spec.rows.map((r) => r.length))).toEqual(new Set([MAX_SIZE]))
+    expect(Array.from(fromSpec(spec).data)).toEqual(Array.from(doc.data))
+  })
+
+  it('MAX_SIZE 행도 접었다 펴진다', () => {
+    const doc = createDoc(MAX_SIZE, 2)
+    for (let x = 0; x < MAX_SIZE; x++) setPixel(doc, x, 0, [1, 2, 3, 255])
+    const spec = toSpec(doc)
+    expect(unpackRows(packRows(spec), MAX_SIZE)).toEqual(spec.rows)
   })
 })
