@@ -6,7 +6,8 @@ import type { StampOptions, ToolId } from '../core/tools'
 import type { IconProps } from './icons'
 import {
   IconBrush,
-  IconCenter,
+  IconCenterX,
+  IconCenterY,
   IconCopy,
   IconCut,
   IconEraser,
@@ -64,7 +65,8 @@ export interface LeftRailProps {
   onCopy: () => void
   onCut: () => void
   onPaste: () => void
-  onCenter: () => void
+  onCenterX: () => void
+  onCenterY: () => void
 }
 
 export function LeftRail(props: LeftRailProps) {
@@ -149,10 +151,16 @@ export function LeftRail(props: LeftRailProps) {
         <IconCut />
       </RailButton>
       <RailButton
-        title="가운데로 (선택이 없으면 그림 전체)"
-        onClick={props.onCenter}
+        title="가로 가운데 (선택이 없으면 그림 전체)"
+        onClick={props.onCenterX}
       >
-        <IconCenter />
+        <IconCenterX />
+      </RailButton>
+      <RailButton
+        title="세로 가운데 (선택이 없으면 그림 전체)"
+        onClick={props.onCenterY}
+      >
+        <IconCenterY />
       </RailButton>
       <RailButton
         title="붙여넣기 (Ctrl+V)"

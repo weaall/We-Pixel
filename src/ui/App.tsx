@@ -7,6 +7,7 @@ import type { PixelDoc } from '../core/doc'
 import { clear, MAX_SIZE, MIN_SIZE, resizeDoc } from '../core/doc'
 import { History } from '../core/history'
 import type { Rect } from '../core/selection'
+import type { CenterAxis } from '../core/selection'
 import { centerRegion, clearRegion, contentRect, copyRegion, moveRegion, pasteAt } from '../core/selection'
 import type { StampOptions, ToolId } from '../core/tools'
 import { defaultStampOptions } from '../core/tools'
@@ -345,12 +346,15 @@ export function App() {
    * 선택이 없으면 그려진 부분 전체를 옮긴다. 스프라이트 하나를 가운데 맞출 때
    * 매번 선택부터 하지 않아도 된다.
    */
-  const centerSelection = useCallback(() => {
-    const out = centerRegion(doc, selection)
-    if (out === null) return
-    replaceDoc(out.doc)
-    setSelection(selection === null ? null : out.rect)
-  }, [doc, selection, replaceDoc])
+  const centerSelection = useCallback(
+    (axis: CenterAxis) => {
+      const out = centerRegion(doc, selection, axis)
+      if (out === null) return
+      replaceDoc(out.doc)
+      setSelection(selection === null ? null : out.rect)
+    },
+    [doc, selection, replaceDoc],
+  )
 
   /**
    * 선택한 것을 한 칸씩 민다.
@@ -675,7 +679,8 @@ export function App() {
           onCopy={copySelection}
           onCut={cutSelection}
           onPaste={pasteClipboard}
-          onCenter={centerSelection}
+          onCenterX={() => centerSelection('x')}
+          onCenterY={() => centerSelection('y')}
         />
 
         <div className="workspace">

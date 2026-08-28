@@ -228,6 +228,28 @@ describe('centerOffset / centerRegion', () => {
     expect(centerOffset({ x: 3, y: 3, w: 3, h: 3 }, doc)).toEqual({ dx: 0, dy: 0 })
   })
 
+  it('축을 하나만 맞출 수 있다', () => {
+    // 바닥에 선 캐릭터는 가로만 가운데 두고 세로는 그대로 둔다.
+    const doc = createDoc(10, 10)
+    expect(centerOffset({ x: 0, y: 0, w: 2, h: 2 }, doc, 'x')).toEqual({ dx: 4, dy: 0 })
+    expect(centerOffset({ x: 0, y: 0, w: 2, h: 2 }, doc, 'y')).toEqual({ dx: 0, dy: 4 })
+  })
+
+  it('가로만 맞추면 세로는 제자리다', () => {
+    const doc = createDoc(9, 9)
+    setPixel(doc, 0, 0, RED)
+    const out = centerRegion(doc, null, 'x') as { doc: PixelDoc; rect: Rect }
+    expect(getPixel(out.doc, 4, 0)).toEqual(RED)
+    expect(out.rect).toEqual({ x: 4, y: 0, w: 1, h: 1 })
+  })
+
+  it('세로만 맞추면 가로는 제자리다', () => {
+    const doc = createDoc(9, 9)
+    setPixel(doc, 0, 0, RED)
+    const out = centerRegion(doc, null, 'y') as { doc: PixelDoc; rect: Rect }
+    expect(getPixel(out.doc, 0, 4)).toEqual(RED)
+  })
+
   it('선택한 영역을 가운데로 옮긴다', () => {
     const doc = createDoc(9, 9)
     setPixel(doc, 0, 0, RED)

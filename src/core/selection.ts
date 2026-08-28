@@ -117,15 +117,24 @@ export function contentRect(doc: PixelDoc): Rect | null {
  * 남는 칸이 홀수면 어느 쪽으로든 반 칸이 남는다. 내림으로 통일해 위·왼쪽에
  * 붙인다 — 어느 쪽이든 상관없지만 매번 같아야 두 번 눌렀을 때 흔들리지 않는다.
  */
-export function centerOffset(rect: Rect, doc: PixelDoc): { dx: number; dy: number } {
+export type CenterAxis = 'both' | 'x' | 'y'
+
+export function centerOffset(
+  rect: Rect,
+  doc: PixelDoc,
+  axis: CenterAxis = 'both',
+): { dx: number; dy: number } {
   return {
-    dx: Math.floor((doc.w - rect.w) / 2) - rect.x,
-    dy: Math.floor((doc.h - rect.h) / 2) - rect.y,
+    dx: axis === 'y' ? 0 : Math.floor((doc.w - rect.w) / 2) - rect.x,
+    dy: axis === 'x' ? 0 : Math.floor((doc.h - rect.h) / 2) - rect.y,
   }
 }
 
 /**
- * 선택한 영역을 캔버스 한가운데로 옮긴다.
+ * 선택한 영역을 캔버스 가운데로 옮긴다.
+ *
+ * 축을 따로 고를 수 있다. 가로만 맞추고 세로는 손으로 잡아 둔 자리를 그대로
+ * 두고 싶을 때가 많다 — 바닥에 선 캐릭터를 가로만 가운데 두는 식이다.
  *
  * 선택이 없으면 그려진 부분 전체를 옮긴다. 스프라이트 하나를 캔버스 가운데
  * 맞출 때 매번 선택부터 하지 않아도 된다.
@@ -133,10 +142,11 @@ export function centerOffset(rect: Rect, doc: PixelDoc): { dx: number; dy: numbe
 export function centerRegion(
   doc: PixelDoc,
   rect: Rect | null,
+  axis: CenterAxis = 'both',
 ): { doc: PixelDoc; rect: Rect } | null {
   const target = rect ?? contentRect(doc)
   if (target === null) return null
-  const { dx, dy } = centerOffset(target, doc)
+  const { dx, dy } = centerOffset(target, doc, axis)
   if (dx === 0 && dy === 0) return { doc: { w: doc.w, h: doc.h, data: new Uint8ClampedArray(doc.data) }, rect: target }
   return moveRegion(doc, target, dx, dy)
 }
