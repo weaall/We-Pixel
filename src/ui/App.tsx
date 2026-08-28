@@ -12,6 +12,7 @@ import type { StampOptions, ToolId } from '../core/tools'
 import { defaultStampOptions } from '../core/tools'
 import { AiPanel } from './AiPanel'
 import { ButtonPanel } from './ButtonPanel'
+import { ItemPanel } from './ItemPanel'
 import { KitPanel } from './KitPanel'
 import { CanvasView } from './CanvasView'
 import { DiceSetPanel } from './DiceSetPanel'
@@ -63,6 +64,7 @@ type ModalId =
   | 'generate'
   | 'diceset'
   | 'button'
+  | 'item'
   | 'kit'
   | 'import'
   | 'recolor'
@@ -75,6 +77,7 @@ const RIGHT_RAIL: ReadonlyArray<{ id: ModalId; label: string; icon: ComponentTyp
   { id: 'generate', label: '색 변형', icon: IconDice },
   { id: 'diceset', label: '주사위 세트', icon: IconDice },
   { id: 'button', label: '버튼', icon: IconResize },
+  { id: 'item', label: '아이템 칸', icon: IconFolder },
   { id: 'kit', label: 'UI 키트', icon: IconPackage },
   { id: 'import', label: '이미지 가져오기', icon: IconImage },
   { id: 'recolor', label: '색상 교체', icon: IconRecolor },
@@ -706,6 +709,11 @@ export function App() {
       {modal === 'button' && (
         <Modal title="버튼" onClose={() => setModal(null)}>
           <ButtonPanel onGenerateMany={addPages} />
+        </Modal>
+      )}
+      {modal === 'item' && (
+        <Modal title="아이템 칸" onClose={() => setModal(null)}>
+          <ItemPanel onGenerateMany={addPages} />
         </Modal>
       )}
       {modal === 'kit' && (

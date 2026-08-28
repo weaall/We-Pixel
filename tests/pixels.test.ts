@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resample, toLogicalGrid } from '../src/core/resample'
+import { resample, toLogicalGrid, upscale } from '../src/core/resample'
 import { fromHsl, parseHex, toHex } from '../src/core/color'
 import { TooManyColorsError, fromSpec, packRows, toSpec, unpackRows, usedColors } from '../src/core/codec'
 import { MAX_SIZE, contentBounds, createDoc, getPixel, resizeDoc, setPixel } from '../src/core/doc'
@@ -277,5 +277,43 @@ describe('가장 큰 캔버스', () => {
     for (let x = 0; x < MAX_SIZE; x++) setPixel(doc, x, 0, [1, 2, 3, 255])
     const spec = toSpec(doc)
     expect(unpackRows(packRows(spec), MAX_SIZE)).toEqual(spec.rows)
+  })
+})
+
+describe('upscale', () => {
+  it('한 칸이 정확히 블록이 된다', () => {
+    const src = createDoc(2, 2)
+    setPixel(src, 0, 0, [255, 0, 0, 255])
+    setPixel(src, 1, 1, [0, 0, 255, 255])
+    const out = upscale(src, 4)
+    expect(out.w).toBe(8)
+    for (let y = 0; y < 4; y++) {
+      for (let x = 0; x < 4; x++) expect(getPixel(out, x, y)).toEqual([255, 0, 0, 255])
+    }
+    expect(getPixel(out, 7, 7)).toEqual([0, 0, 255, 255])
+  })
+
+  it('원본에 없던 색을 만들지 않는다', () => {
+    // 보간하면 경계에 중간색이 생겨 색 교체가 그 색을 못 잡는다.
+    const src = createDoc(3, 3)
+    setPixel(src, 1, 1, [255, 0, 0, 255])
+    const seen = new Set<string>()
+    const out = upscale(src, 4)
+    for (let i = 0; i < out.data.length; i += 4) {
+      seen.add(`${out.data[i]},${out.data[i + 1]},${out.data[i + 2]},${out.data[i + 3]}`)
+    }
+    expect(seen).toEqual(new Set(['0,0,0,0', '255,0,0,255']))
+  })
+
+  it('되돌리면 원본이다', () => {
+    const src = createDoc(5, 5)
+    setPixel(src, 1, 3, [9, 8, 7, 255])
+    expect(Array.from(toLogicalGrid(upscale(src, 4)).doc.data)).toEqual(Array.from(src.data))
+  })
+
+  it('정수가 아니면 거절한다', () => {
+    // 1.5배로 늘리면 어떤 줄은 두껍고 어떤 줄은 얇아진다.
+    expect(() => upscale(createDoc(4, 4), 1.5)).toThrow(/정수/)
+    expect(() => upscale(createDoc(4, 4), 0)).toThrow(/정수/)
   })
 })

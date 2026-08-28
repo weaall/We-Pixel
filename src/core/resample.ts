@@ -224,3 +224,32 @@ export function toLogicalGrid(doc: PixelDoc): { doc: PixelDoc; scale: number } {
   const snapped = snapToGrid(doc, scale)
   return { doc: resample(snapped, doc.w / scale, doc.h / scale, 'nearest'), scale }
 }
+
+/**
+ * 정수배로 키운다.
+ *
+ * 픽셀 아트는 정수배가 아니면 어떤 줄은 두껍고 어떤 줄은 얇아져 원본에 없던
+ * 무늬가 생긴다. 보간도 하지 않는다 — 한 칸이 정확히 factor x factor 블록이
+ * 된다. 정보가 늘지는 않는다. 같은 그림이 그만큼 커질 뿐이다.
+ */
+export function upscale(doc: PixelDoc, factor: number): PixelDoc {
+  if (!Number.isInteger(factor) || factor < 1) {
+    throw new Error(`배율은 1 이상의 정수여야 합니다: ${factor}`)
+  }
+  if (factor === 1) return { w: doc.w, h: doc.h, data: new Uint8ClampedArray(doc.data) }
+
+  const w = doc.w * factor
+  const out = createDoc(w, doc.h * factor)
+  for (let y = 0; y < doc.h; y++) {
+    for (let x = 0; x < doc.w; x++) {
+      const from = (y * doc.w + x) * 4
+      for (let dy = 0; dy < factor; dy++) {
+        const row = (y * factor + dy) * w
+        for (let dx = 0; dx < factor; dx++) {
+          out.data.set(doc.data.subarray(from, from + 4), (row + x * factor + dx) * 4)
+        }
+      }
+    }
+  }
+  return out
+}
