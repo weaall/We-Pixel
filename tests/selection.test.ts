@@ -3,7 +3,10 @@ import type { RGBA } from '../src/core/color'
 import { anchorOffset, composite } from '../src/core/compose'
 import { createDoc, getPixel, setPixel } from '../src/core/doc'
 import type { PixelDoc } from '../src/core/doc'
+import type { Rect } from '../src/core/selection'
 import {
+  centerOffset,
+  centerRegion,
   clampRect,
   clearRegion,
   containsPoint,
@@ -207,5 +210,61 @@ describe('composite / anchorOffset', () => {
     for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) setPixel(add, x, y, BLUE)
     const out = composite(base, add, { mode: 'front', x: 2, y: 2 })
     expect(out.added).toBe(4)
+  })
+})
+
+describe('centerOffset / centerRegion', () => {
+  it('사각형을 캔버스 한가운데로 보내는 양을 낸다', () => {
+    expect(centerOffset({ x: 0, y: 0, w: 2, h: 2 }, createDoc(10, 10))).toEqual({ dx: 4, dy: 4 })
+    expect(centerOffset({ x: 8, y: 8, w: 2, h: 2 }, createDoc(10, 10))).toEqual({ dx: -4, dy: -4 })
+  })
+
+  it('반 칸이 남으면 늘 같은 쪽에 붙인다', () => {
+    // 매번 달라지면 두 번 눌렀을 때 그림이 흔들린다.
+    const doc = createDoc(10, 10)
+    const once = centerOffset({ x: 0, y: 0, w: 3, h: 3 }, doc)
+    expect(once).toEqual({ dx: 3, dy: 3 })
+    // 이미 가운데면 더 움직이지 않는다.
+    expect(centerOffset({ x: 3, y: 3, w: 3, h: 3 }, doc)).toEqual({ dx: 0, dy: 0 })
+  })
+
+  it('선택한 영역을 가운데로 옮긴다', () => {
+    const doc = createDoc(9, 9)
+    setPixel(doc, 0, 0, RED)
+    const out = centerRegion(doc, { x: 0, y: 0, w: 1, h: 1 })
+    expect(out).not.toBeNull()
+    expect(getPixel((out as { doc: PixelDoc }).doc, 4, 4)).toEqual(RED)
+    expect((out as { rect: Rect }).rect).toEqual({ x: 4, y: 4, w: 1, h: 1 })
+  })
+
+  it('선택이 없으면 그려진 부분 전체를 옮긴다', () => {
+    const doc = createDoc(10, 10)
+    setPixel(doc, 0, 0, RED)
+    setPixel(doc, 1, 1, BLUE)
+    const out = centerRegion(doc, null)
+    expect(out).not.toBeNull()
+    const moved = (out as { doc: PixelDoc }).doc
+    expect(getPixel(moved, 4, 4)).toEqual(RED)
+    expect(getPixel(moved, 5, 5)).toEqual(BLUE)
+    expect(opaque(moved)).toBe(2)
+  })
+
+  it('두 번 눌러도 같은 자리다', () => {
+    const doc = createDoc(11, 11)
+    setPixel(doc, 1, 2, RED)
+    const first = centerRegion(doc, null) as { doc: PixelDoc }
+    const second = centerRegion(first.doc, null) as { doc: PixelDoc }
+    expect(Array.from(second.doc.data)).toEqual(Array.from(first.doc.data))
+  })
+
+  it('빈 캔버스는 아무것도 하지 않는다', () => {
+    expect(centerRegion(createDoc(8, 8), null)).toBeNull()
+  })
+
+  it('원본을 훼손하지 않는다', () => {
+    const doc = createDoc(9, 9)
+    setPixel(doc, 0, 0, RED)
+    centerRegion(doc, null)
+    expect(getPixel(doc, 0, 0)).toEqual(RED)
   })
 })

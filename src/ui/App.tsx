@@ -7,7 +7,7 @@ import type { PixelDoc } from '../core/doc'
 import { clear, MAX_SIZE, MIN_SIZE, resizeDoc } from '../core/doc'
 import { History } from '../core/history'
 import type { Rect } from '../core/selection'
-import { clearRegion, contentRect, copyRegion, pasteAt } from '../core/selection'
+import { centerRegion, clearRegion, contentRect, copyRegion, moveRegion, pasteAt } from '../core/selection'
 import type { StampOptions, ToolId } from '../core/tools'
 import { defaultStampOptions } from '../core/tools'
 import { AiPanel } from './AiPanel'
@@ -231,6 +231,11 @@ export function App() {
     [doc],
   )
 
+  /** 방향키를 연달아 누르는 동안은 같은 이동으로 묶는다. */
+  const nudging = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** 그 동안의 선택 위치. state 보다 먼저 갱신되어 눌림이 묻히지 않는다. */
+  const pendingSel = useRef<Rect | null>(null)
+
   const [saveError, setSaveError] = useState<string | null>(null)
 
   /**
@@ -333,6 +338,49 @@ export function App() {
   const selectAll = useCallback(() => {
     setSelection({ x: 0, y: 0, w: doc.w, h: doc.h })
   }, [doc.w, doc.h])
+
+  /**
+   * 선택한 것을 캔버스 한가운데로 보낸다.
+   *
+   * 선택이 없으면 그려진 부분 전체를 옮긴다. 스프라이트 하나를 가운데 맞출 때
+   * 매번 선택부터 하지 않아도 된다.
+   */
+  const centerSelection = useCallback(() => {
+    const out = centerRegion(doc, selection)
+    if (out === null) return
+    replaceDoc(out.doc)
+    setSelection(selection === null ? null : out.rect)
+  }, [doc, selection, replaceDoc])
+
+  /**
+   * 선택한 것을 한 칸씩 민다.
+   *
+   * 옮기는 동안 매번 undo 를 쌓으면 되돌리기가 한 칸씩만 되돌아간다. 방향키를
+   * 연달아 누른 것은 한 번의 이동으로 본다.
+   */
+  const nudgeSelection = useCallback(
+    (dx: number, dy: number) => {
+      // 키를 누르고 있으면 React 가 다시 그리기 전에 다음 눌림이 온다.
+      // 그때 state 를 읽으면 이전 자리를 보고 계산해 이동이 묻힌다.
+      const from = pendingSel.current ?? selection
+      if (from === null) return
+
+      if (nudging.current === null) history.current.commit(doc)
+      else clearTimeout(nudging.current)
+      nudging.current = setTimeout(() => {
+        nudging.current = null
+        pendingSel.current = null
+      }, 600)
+
+      const next = { ...from, x: from.x + dx, y: from.y + dy }
+      pendingSel.current = next
+      // 그림도 최신 것에서 옮겨야 연달아 누른 만큼 실제로 움직인다.
+      setDoc((d) => moveRegion(d, from, dx, dy).doc)
+      setSelection(next)
+      bumpHistory()
+    },
+    [doc, selection, setDoc],
+  )
 
   const selectContent = useCallback(() => {
     setSelection(contentRect(doc))
@@ -537,6 +585,22 @@ export function App() {
         deleteSelection()
         return
       }
+      // 선택을 한 칸씩. 시프트를 누르면 여덟 칸씩.
+      const ARROWS: Record<string, [number, number]> = {
+        arrowleft: [-1, 0],
+        arrowright: [1, 0],
+        arrowup: [0, -1],
+        arrowdown: [0, 1],
+      }
+      const dir = ARROWS[key]
+      if (dir) {
+        // 선택이 없으면 브라우저가 화면을 스크롤하도록 둔다.
+        if (selection === null) return
+        e.preventDefault()
+        const step = e.shiftKey ? 8 : 1
+        nudgeSelection(dir[0] * step, dir[1] * step)
+        return
+      }
 
       const t = SHORTCUT_TOOLS[key]
       if (t) {
@@ -555,7 +619,19 @@ export function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [undo, redo, modal, copySelection, cutSelection, pasteClipboard, selectAll, deleteSelection, selectContent])
+  }, [
+    undo,
+    redo,
+    modal,
+    copySelection,
+    cutSelection,
+    pasteClipboard,
+    selectAll,
+    deleteSelection,
+    selectContent,
+    nudgeSelection,
+    selection,
+  ])
 
   /** 가져오기 모달이 열린 뒤에 대기 중인 파일을 넘긴다. */
   const handleImportReady = useCallback((fn: ((file: File) => void) | null) => {
@@ -599,6 +675,7 @@ export function App() {
           onCopy={copySelection}
           onCut={cutSelection}
           onPaste={pasteClipboard}
+          onCenter={centerSelection}
         />
 
         <div className="workspace">

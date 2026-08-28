@@ -252,3 +252,14 @@ export const IconPaste = ({ size }: IconProps) =>
     </>,
     size,
   )
+
+/** 가운데 정렬. 바깥 상자 안에 작은 상자가 가운데 있고 십자 안내선이 지난다. */
+export const IconCenter = ({ size }: IconProps) =>
+  svg(
+    <>
+      <rect x="3" y="3" width="18" height="18" rx="1" />
+      <rect x="9" y="9" width="6" height="6" rx="1" fill="currentColor" />
+      <path d="M12 3v3M12 18v3M3 12h3M18 12h3" />
+    </>,
+    size,
+  )
